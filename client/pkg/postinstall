@@ -1,0 +1,28 @@
+#!/bin/zsh
+
+# 1. Ensure strict permissions on the application directory
+chmod -R 755 "/usr/local/aura-ras/"
+chown -R root:wheel "/usr/local/aura-ras/"
+
+# 2. Register the UI app with macOS
+/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "/usr/local/aura-ras/aura-ras-helper.app"
+
+# 3. Load the XPC Daemon
+# We append || true so the package doesn't fail if the daemon is already bootstrapped from a previous installation
+launchctl bootstrap system /Library/LaunchDaemons/edu.purdue.pae.aura-ras.daemon.plist || true
+
+# 4. Trigger the Swift Agent initialization
+# This will read MDM preferences, generate SSH keys, register with the server,
+# build the LaunchDaemon plist dynamically, and start the autossh tunnel.
+/usr/local/aura-ras/aura-ras-agent --initialize
+
+# Capture the exit code of the Swift agent to ensure the Jamf package installation reflects success/failure
+AGENT_EXIT_CODE=$?
+
+if [ $AGENT_EXIT_CODE -eq 0 ]; then
+    echo "AuraRAS initialization completed successfully."
+    exit 0
+else
+    echo "AuraRAS initialization failed."
+    exit 1
+fi

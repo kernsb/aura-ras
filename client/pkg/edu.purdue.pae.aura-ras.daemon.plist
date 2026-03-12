@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "[http://www.apple.com/DTDs/PropertyList-1.0.dtd](http://www.apple.com/DTDs/PropertyList-1.0.dtd)">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>edu.purdue.pae.aura-ras.daemon</string>
+    <key>MachServices</key>
+    <dict>
+        <!-- This is crucial: It tells macOS to route XPC traffic to this daemon -->
+        <key>edu.purdue.pae.aura-ras.daemon.xpc</key>
+        <true/>
+    </dict>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/PrivilegedHelperTools/aura-ras-daemon</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
