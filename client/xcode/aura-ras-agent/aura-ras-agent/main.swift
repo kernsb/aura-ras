@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - Global Configuration
-let agentVersion = "0.1.3"
+let agentVersion = "0.1.4"
 let privateKeyPath = "/var/root/.ssh/aura_ed25519"
 let publicKeyPath = "/var/root/.ssh/aura_ed25519.pub"
 
@@ -77,6 +77,41 @@ func ensureSSHKeysExist(forceRotate: Bool) -> String? {
     return try? String(contentsOfFile: publicKeyPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+func unregisterFromServer(jssID: String, serverAddress: String) -> Bool {
+    guard let url = URL(string: "https://\(serverAddress)/api/unregister") else { return false }
+    var success = false
+    let semaphore = DispatchSemaphore(value: 0)
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    let payload: [String: Any] = ["jssid": Int(jssID) ?? 0]
+    request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+    
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        defer { semaphore.signal() }
+        
+        if let error = error {
+            print("Network Error: \(error.localizedDescription)")
+            return
+        }
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            if httpResponse.statusCode == 200 {
+                print("SUCCESS: Endpoint unregistered from server and SSH keys revoked.")
+                success = true
+            } else {
+                print("Server rejected unregistration or endpoint was not found. HTTP Status: \(httpResponse.statusCode)")
+            }
+        }
+    }
+    
+    task.resume()
+    semaphore.wait()
+    return success
+}
+
 func registerWithServer(jssID: String, role: String, publicKey: String, serverURL: URL) -> Bool {
     var success = false
     let semaphore = DispatchSemaphore(value: 0)
@@ -105,8 +140,25 @@ func registerWithServer(jssID: String, role: String, publicKey: String, serverUR
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 200 {
-                print("SUCCESS: Successfully registered with AuraRAS Appliance.")
-                success = true
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let assignedID = json["id"] as? Int,
+                   let sshPort = json["ssh_port"] as? Int,
+                   let vncPort = json["vnc_port"] as? Int {
+                    
+                    // Save the assigned server ID and ports locally so the LaunchDaemon can read them natively
+                    let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
+                    let dict = NSMutableDictionary(contentsOfFile: prefsPath) ?? NSMutableDictionary()
+                    dict.setValue(assignedID, forKey: "AuraID")
+                    dict.setValue(sshPort, forKey: "LocalSSHPort")
+                    dict.setValue(vncPort, forKey: "LocalVNCPort")
+                    dict.write(toFile: prefsPath, atomically: true)
+                    
+                    print("SUCCESS: Registered with AuraRAS Appliance. Assigned ID: \(assignedID)")
+                    success = true
+                } else {
+                    print("ERROR: Server returned success but failed to provide port assignments.")
+                }
             } else {
                 print("Server rejected registration. HTTP Status: \(httpResponse.statusCode)")
                 if let data = data, let body = String(data: data, encoding: .utf8) {
@@ -122,17 +174,18 @@ func registerWithServer(jssID: String, role: String, publicKey: String, serverUR
 }
 
 func restartTunnel(config: AuraRASConfig) {
-    // Calculate ports based on JSSID (matching Django backend logic)
-    guard let jssIDInt = Int(config.jssID) else {
-        print("ERROR: JSSID is not an integer.")
+    // Read the ports that the server assigned us during the registration call
+    let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
+    guard let dict = NSDictionary(contentsOfFile: prefsPath),
+          let sshPort = dict["LocalSSHPort"] as? Int,
+          let vncPort = dict["LocalVNCPort"] as? Int else {
+        print("ERROR: Could not read assigned ports from local preferences. Registration may have failed.")
         return
     }
-    let sshPort = jssIDInt + 40000
-    let vncPort = jssIDInt + 50000
 
     let daemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.tunnel.plist"
     
-    // Dynamically build the LaunchDaemon plist for the autossh reverse tunnel
+    // Dynamically build the LaunchDaemon plist for the autossh reverse tunnel using the server-mandated ports
     let plistContent = """
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -201,7 +254,7 @@ func restartTunnel(config: AuraRASConfig) {
         bootstrap.waitUntilExit()
         
         if bootstrap.terminationStatus == 0 {
-            print("Tunnel service successfully restarted.")
+            print("Tunnel service successfully restarted on assigned ports (\(sshPort), \(vncPort)).")
         } else {
             print("WARNING: Tunnel service restart may have failed (status \(bootstrap.terminationStatus)).")
         }
@@ -219,6 +272,7 @@ func uninstallAuraRAS() {
     let helperDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.daemon.plist"
     let installDir = "/usr/local/aura-ras"
     let helperDaemon = "/Library/PrivilegedHelperTools/aura-ras-daemon"
+    let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
     
     // 1. Force kill active ghost processes
     print("Terminating any active helper processes...")
@@ -264,7 +318,13 @@ func uninstallAuraRAS() {
         print("Removed root XPC daemon.")
     }
 
-    // 6. Remove SSH keys
+    // 6. Remove local preferences
+    if fileManager.fileExists(atPath: prefsPath) {
+        try? fileManager.removeItem(atPath: prefsPath)
+        print("Removed local ID preferences.")
+    }
+
+    // 7. Remove SSH keys
     if fileManager.fileExists(atPath: privateKeyPath) {
         try? fileManager.removeItem(atPath: privateKeyPath)
     }
@@ -315,6 +375,14 @@ guard geteuid() == 0 else {
 }
 
 if isUninstall {
+    // Attempt to notify the server that this endpoint is being decommissioned
+    if let config = getManagedConfig() {
+        print("Notifying server of uninstallation...")
+        _ = unregisterFromServer(jssID: config.jssID, serverAddress: config.serverAddress)
+    } else {
+        print("WARNING: Could not read MDM config to contact server. Proceeding with local cleanup only.")
+    }
+    
     uninstallAuraRAS()
     exit(0)
 }

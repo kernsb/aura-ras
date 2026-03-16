@@ -36,9 +36,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = message
             alert.alertStyle = .critical
             
-            // Load our custom icon from the Asset Catalog
-            if let customIcon = NSImage(named: "aura_icon") {
-                alert.icon = customIcon
+            // 1. Try to load the universal ICNS from the Asset Catalog
+            // 2. Fall back to asking Finder to resolve the bundle icon
+            if let appIcon = NSImage(named: "AppIcon") {
+                alert.icon = appIcon
+            } else {
+                alert.icon = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
             }
             
             alert.addButton(withTitle: "Quit")
@@ -118,9 +121,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
         
-        // Load our custom icon from the Asset Catalog
-        if let customIcon = NSImage(named: "aura_icon") {
-            alert.icon = customIcon
+        // 1. Try to load the universal ICNS from the Asset Catalog
+        // 2. Fall back to asking Finder to resolve the bundle icon
+        if let appIcon = NSImage(named: "AppIcon") {
+            alert.icon = appIcon
+        } else {
+            alert.icon = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
         }
         
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
