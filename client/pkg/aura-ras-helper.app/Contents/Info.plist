@@ -9,9 +9,9 @@
 	<key>CFBundleExecutable</key>
 	<string>aura-ras-helper</string>
 	<key>CFBundleIconFile</key>
-	<string>aura_icon</string>
+	<string>AppIcon</string>
 	<key>CFBundleIconName</key>
-	<string>aura_icon</string>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>edu.purdue.pae.aura-ras-helper</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -61,6 +61,8 @@
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAccentColorName</key>
+	<string>AccentColor</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>AuraRAS requires access to Terminal to establish secure SSH sessions.</string>
 </dict>

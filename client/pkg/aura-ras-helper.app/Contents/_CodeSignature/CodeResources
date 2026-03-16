@@ -4,29 +4,29 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<data>
+		NY8MiDsuSXJI17wuJQrUXxPCyz8=
+		</data>
 		<key>Resources/Assets.car</key>
 		<data>
-		RUWcBRGJvF2pRxCth76vXy5zMSk=
-		</data>
-		<key>Resources/aura_icon.icns</key>
-		<data>
-		oN9L8Lu0RQ6jzMzGeBCWo0twplg=
+		HWRaojUbTj8oIrtOP8YXMc77+2c=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			T0DGEWkyV8ROJ3ofRM3VT/yerPHDRcXhMqyuTpUWDeE=
+			</data>
+		</dict>
 		<key>Resources/Assets.car</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			EGVX2D2pl8qfy4gbTsBPG9O18zTza46Zf+WRUF0Shos=
-			</data>
-		</dict>
-		<key>Resources/aura_icon.icns</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			bGBztGT+i3xNxLAkyvpCHzkrBhXQtNtJ5rx90xqOohk=
+			p1xc11SMhpB5Eo2lFpA8gReC6U4yBWc0f5/64+UjBdQ=
 			</data>
 		</dict>
 	</dict>

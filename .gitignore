@@ -1,0 +1,6 @@
+/server/root/var/www/aura-ras/venv
+/server/root/var/www/aura-ras/api/__pycache__
+/server/root/var/www/aura-ras/aura_ras_server/__pycache__
+/server/root/var/www/aura-ras/api/migrations/__pycache__
+.DS_Store
+.DS_Store
