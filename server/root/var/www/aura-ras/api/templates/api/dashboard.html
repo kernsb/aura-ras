@@ -6,256 +6,371 @@
     <title>AuraRAS Admin Portal</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons (for the magnifying glass) -->
+    <!-- Bootstrap Icons (for the magnifying glass and auth locks) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <!-- DataTables Bootstrap 5 CSS -->
     <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
     
-    <style>
-        /* Official Purdue University Color Palette */
-        :root {
-            --purdue-gold: #CFB991;
-            --purdue-gold-dark: #8E6F3E;
-            --purdue-black: #000000;
-            --purdue-steel: #555960;
-        }
-
-        /* ------------------------- */
-        /* UNIVERSAL ELEMENTS        */
-        /* ------------------------- */
-        .navbar, .footer { 
-            background-color: var(--purdue-steel) !important; 
-        }
-        .navbar-brand { font-weight: bold; letter-spacing: 1px; color: #fff !important;}
-        
-        #endpointsTable td, #endpointsTable th {
-            padding-top: 1.25rem;
-            padding-bottom: 1.25rem;
-        }
-        .badge-admin { background-color: var(--purdue-gold); color: #000; }
-        
-        /* Screen Share Gold Button */
-        .btn-purdue-gold {
-            background-color: var(--purdue-gold);
-            color: var(--purdue-black) !important;
-            border-color: var(--purdue-gold-dark);
-            font-weight: 500;
-        }
-        .btn-purdue-gold:hover {
-            background-color: var(--purdue-gold-dark);
-            border-color: var(--purdue-gold-dark);
-            color: #fff !important;
-        }
-
-        /* Custom Pagination Active Colors */
-        .pagination .page-item.active .page-link {
-            background-color: var(--purdue-gold) !important;
-            border-color: var(--purdue-gold) !important;
-            color: var(--purdue-black) !important;
-            font-weight: bold;
-        }
-        .pagination .page-link:focus {
-            box-shadow: 0 0 0 0.25rem rgba(207, 185, 145, 0.5);
-        }
-
-        /* Ensure focus rings are highly visible and brand-colored for keyboard navigation */
-        a:focus, button:focus, input:focus, select:focus {
-            outline: 3px solid var(--purdue-gold) !important;
-            outline-offset: 2px;
-        }
-        
-        /* Clean up the DataTables filter search box layout */
-        .dataTables_filter label {
-            display: flex;
-            align-items: center;
-            margin-bottom: 0;
-            font-weight: 500;
-        }
-        .dataTables_filter input {
-            margin-left: 0.5rem;
-        }
-
-        /* ------------------------- */
-        /* LIGHT MODE SPECIFIC       */
-        /* ------------------------- */
-        [data-bs-theme="light"] body { background-color: #f8f9fa; color: var(--purdue-black); }
-        [data-bs-theme="light"] .navbar { border-bottom: 2px solid var(--purdue-black); }
-        [data-bs-theme="light"] .footer { border-top: 2px solid var(--purdue-black); }
-        [data-bs-theme="light"] .table-striped > tbody > tr:nth-of-type(odd) > td { background-color: #eaeaea !important; }
-        [data-bs-theme="light"] .table-hover > tbody > tr:hover > td { background-color: #dcdcdc !important; } 
-        [data-bs-theme="light"] .badge-endpoint { background-color: var(--purdue-black); color: #fff; }
-        [data-bs-theme="light"] .btn-purdue-solid { background-color: var(--purdue-black); color: #fff; border-color: var(--purdue-black); }
-        [data-bs-theme="light"] .btn-purdue-solid:hover { background-color: #333; color: #fff; }
-        [data-bs-theme="light"] .pagination .page-link { color: var(--purdue-black); }
-
-        /* ------------------------- */
-        /* DARK MODE SPECIFIC        */
-        /* ------------------------- */
-        [data-bs-theme="dark"] body { background-color: #121212; color: #e0e0e0; }
-        [data-bs-theme="dark"] .card { background-color: #1e1e1e; border-color: #333 !important; }
-        [data-bs-theme="dark"] .navbar { border-bottom: 2px solid var(--purdue-gold); } /* Striking gold accent in dark mode! */
-        [data-bs-theme="dark"] .footer { border-top: 2px solid var(--purdue-gold); }
-        
-        /* Dark mode table adjustments */
-        [data-bs-theme="dark"] .table-light th { background-color: #1a1d20 !important; color: #dee2e6 !important; border-color: #373b3e !important; }
-        [data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > td { background-color: #222529 !important; color: #e9ecef !important; border-color: #333; }
-        [data-bs-theme="dark"] .table-hover > tbody > tr:hover > td { background-color: #2c3034 !important; color: #fff !important; border-color: #333; }
-        [data-bs-theme="dark"] #endpointsTable td, [data-bs-theme="dark"] #endpointsTable th { border-color: #333; color: #e9ecef; }
-        
-        [data-bs-theme="dark"] .badge-endpoint { background-color: var(--purdue-steel); color: #fff; }
-        [data-bs-theme="dark"] .btn-purdue-solid { background-color: var(--purdue-steel); color: #fff; border-color: var(--purdue-steel); }
-        [data-bs-theme="dark"] .btn-purdue-solid:hover { background-color: #6c757d; color: #fff; }
-        
-        /* Dark Mode DataTables Form Elements */
-        [data-bs-theme="dark"] .dataTables_filter input, [data-bs-theme="dark"] .dataTables_length select { 
-            background-color: #2b3035; color: #fff; border-color: #444; 
-        }
-        [data-bs-theme="dark"] .pagination .page-link { background-color: #212529; border-color: #333; color: #e0e0e0; }
-        [data-bs-theme="dark"] .pagination .page-item.disabled .page-link { background-color: #1a1d20; border-color: #333; color: #6c757d; }
-    </style>
+    <!-- Custom AuraRAS Styles -->
+    <link rel="stylesheet" href="/static/aura-style.css">
 
     <script>
-        // Auto-detect system dark mode and apply Bootstrap 5 theme immediately to prevent a "flash" of white
+        // Apply theme based on User Preference or System Default
         function applyTheme() {
-            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            {% if user.is_authenticated and user_role == 'Server Administrator' or user.is_authenticated and user_role == 'Desktop Administrator' or user.is_authenticated and user_role == 'Customer' %}
+                const userPref = "{{ user_theme|default:'auto' }}";
+            {% else %}
+                const userPref = "auto"; // Always force 'auto' on the splash screen
+            {% endif %}
+            
+            let isDark = false;
+            
+            if (userPref === 'dark') {
+                isDark = true;
+            } else if (userPref === 'light') {
+                isDark = false;
+            } else {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
             document.documentElement.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
         }
         applyTheme();
-        // Set an event listener so the page updates in real-time if the user changes their OS settings
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+        
+        // Listen for OS changes, but only apply if user preference is 'auto'
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            {% if user.is_authenticated and user_role == 'Server Administrator' or user.is_authenticated and user_role == 'Desktop Administrator' or user.is_authenticated and user_role == 'Customer' %}
+                if ("{{ user_theme|default:'auto' }}" === 'auto') {
+                    applyTheme();
+                }
+            {% else %}
+                applyTheme(); // Always dynamically follow OS on the splash screen
+            {% endif %}
+        });
     </script>
 </head>
-<!-- Added flex-column and min-vh-100 to push the footer to the bottom naturally -->
-<body class="d-flex flex-column min-vh-100">
+<!-- Added overflow-y: scroll to permanently reserve scrollbar space and prevent layout wiggling -->
+<body class="d-flex flex-column min-vh-100" style="overflow-y: scroll;">
 
-<!-- Navigation Bar -->
-<nav class="navbar navbar-expand-lg navbar-dark shadow-sm" aria-label="Main Navigation">
-    <div class="container">
-        <a class="navbar-brand d-flex align-items-center" href="#">
-            <!-- AuraRAS Custom Logo -->
-            <img src="/static/aura_icon.png" alt="AuraRAS Logo" width="42" height="42" class="d-inline-block align-text-top me-2 rounded">
-            AuraRAS Dashboard
-        </a>
-        <span class="navbar-text text-light" aria-hidden="true">
-            Secure Remote Access
-        </span>
-    </div>
-</nav>
-
-<!-- Main Content -->
-<main class="container mt-5 mb-5">
-    <div class="row mb-4">
-        <div class="col">
-            <!-- Semantically an h1 for accessibility hierarchy, but styled identically to an h2 -->
-            <h1 class="mb-0 h2">Registered Endpoints</h1>
-            <!-- High contrast standard text -->
-            <p>Select an endpoint below to initiate a secure connection.</p>
+{% if user.is_authenticated and user_role == 'Server Administrator' or user.is_authenticated and user_role == 'Desktop Administrator' or user.is_authenticated and user_role == 'Customer' %}
+    
+    <!-- Navigation Bar (Authorized Users Only) -->
+    <!-- Added fixed-top -->
+    <nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top" aria-label="Main Navigation">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="#">
+                <img src="/static/aura_icon.png" alt="AuraRAS Logo" width="42" height="42" class="d-inline-block align-text-top me-2 rounded">
+                AuraRAS<div class="fw-normal fs-6 text-white-50">&nbsp;&nbsp;&nbsp;Secure Remote Access</div>
+            </a>
+            
+            <div class="d-flex align-items-center">
+                <a href="{% url 'server_settings' %}" class="btn btn-outline-light border-0 me-2" aria-label="Settings" title="Settings">
+                    <i class="bi bi-gear-fill fs-5"></i>
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle d-flex align-items-center border-0" type="button" id="userMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-person-circle fs-5 me-2"></i>
+                        {{ user.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="userMenu">
+                        <li><h6 class="dropdown-header">Role: {{ user_role }}</h6></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form action="{% url 'oidc_logout' %}" method="post" class="m-0 p-0">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item text-danger d-flex align-items-center">
+                                    <i class="bi bi-box-arrow-right me-2"></i> Log Out
+                                </button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
         </div>
-    </div>
+    </nav>
 
-    <!-- Data Table -->
-    <div class="card shadow-sm border-0">
-        <div class="card-body p-4"> <!-- Added p-4 so the search bar and pagination have room to breathe -->
-            <div class="table-responsive">
-                <!-- Added table-striped for alternating row colors and an ID for DataTables to hook into -->
-                <table id="endpointsTable" class="table table-hover table-striped mb-0 align-middle">
-                    <!-- Visually hidden caption for screen readers -->
-                    <caption class="visually-hidden">List of registered AuraRAS endpoints with connection actions</caption>
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col" class="ps-4">Hostname</th>
-                            <th scope="col">JSSID</th>
-                            <th scope="col">Role</th>
-                            <th scope="col">Last Check-in</th>
-                            <th scope="col" class="text-end pe-4">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for comp in computers %}
-                        <tr>
-                            <td class="ps-4 fw-semibold">{{ comp.hostname }}</td>
-                            <td>{{ comp.jssid }}</td>
-                            <td>
-                                <!-- Utilizing custom Purdue badges -->
-                                {% if comp.role == 'Administrator' %}
-                                    <span class="badge badge-admin">Administrator</span>
-                                {% else %}
-                                    <span class="badge badge-endpoint">Endpoint</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ comp.last_checkin|date:"M d, Y H:i" }}</td>
-                            <td class="text-end pe-4">
-                                <!-- The Custom URL Scheme Buttons with descriptive aria-labels and Purdue styling -->
-                                <a href="auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}" 
-                                   class="btn btn-sm btn-purdue-gold me-2"
-                                   aria-label="Start Screen Share session with {{ comp.hostname }}">
-                                    Screen Share
-                                </a>
-                                <a href="auraras://connect?type=ssh&port={{ comp.ssh_port }}&host={{ comp.hostname }}" 
-                                   class="btn btn-sm btn-purdue-solid"
-                                   aria-label="Open Terminal connection to {{ comp.hostname }}">
-                                    Terminal
-                                </a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="5" class="text-center py-4">
-                                No endpoints have registered with the server yet.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    <!-- Main Content (Authorized Users Only) -->
+    <!-- Added explicit top and bottom margins to prevent sliding under the fixed nav/footer -->
+    <main class="container" style="margin-top: 100px; margin-bottom: 80px;">
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="mb-0 h2">Computers</h1>
+                <p>Select a computer below to initiate a secure connection.</p>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <div class="table-responsive">
+                    <table id="endpointsTable" class="table table-hover table-striped mb-0 align-middle">
+                        <caption class="visually-hidden">List of registered AuraRAS endpoints with connection actions</caption>
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="ps-4">Computer Name</th>
+                                <th scope="col">Role</th>
+                                <th scope="col">Last Check-in</th>
+                                <th scope="col" class="text-end pe-4">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for comp in computers %}
+                            <tr>
+                                <td class="ps-4 fw-semibold">{{ comp.hostname }}</td>
+                                <td>
+                                    {% if comp.role == 'Administrator' %}
+                                        <span class="badge badge-admin">Administrator</span>
+                                    {% else %}
+                                        <span class="badge badge-endpoint">Endpoint</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ comp.last_checkin|date:"M d, Y g:i A" }}</td>
+                                <td class="text-end pe-4">
+                                    {% if laps_enabled %}
+                                        <button class="btn btn-sm btn-outline-secondary me-2" 
+                                                onclick="openLapsModal('{{ comp.jssid }}', '{{ comp.hostname }}')"
+                                                aria-label="View LAPS Passwords for {{ comp.hostname }}"
+                                                title="View LAPS Passwords">
+                                            <i class="bi bi-key-fill"></i>
+                                        </button>
+                                    {% endif %}
+                                    <a href="auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}" 
+                                       class="btn btn-sm btn-purdue-gold me-2"
+                                       aria-label="Start Screen Share session with {{ comp.hostname }}">
+                                        Screen Share
+                                    </a>
+                                    <a href="auraras://connect?type=ssh&port={{ comp.ssh_port }}&host={{ comp.hostname }}" 
+                                       class="btn btn-sm btn-purdue-solid"
+                                       aria-label="Open Terminal connection to {{ comp.hostname }}">
+                                        Terminal
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- LAPS Modal HTML -->
+    <div class="modal fade" id="lapsModal" tabindex="-1" aria-labelledby="lapsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow-lg border-0">
+                <!-- Restyled header using Purdue Steel and White Text -->
+                <div class="modal-header border-0" style="background-color: var(--purdue-steel);">
+                    <h5 class="modal-title fw-bold text-white" id="lapsModalLabel">
+                        <i class="bi bi-key-fill text-white-50 me-2"></i> LAPS Passwords
+                    </h5>
+                    <!-- Added btn-close-white to make the X button visible on the dark background -->
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4" id="lapsModalBody">
+                    <!-- Populated dynamically via AJAX -->
+                </div>
+                <div class="modal-footer border-top-0">
+                    <div class="text-start w-100 text-muted small" style="font-size: 0.75rem;">
+                        <i class="bi bi-info-circle me-1"></i> Viewing a password will trigger an automatic rotation in Jamf.
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-</main>
 
-<!-- Footer -->
-<footer class="footer mt-auto py-3">
-    <div class="container d-flex justify-content-between align-items-center text-light">
-        <span class="fw-light small">A tool by Purdue Apple Enterprise</span>
-        <span class="fw-light small">v0.1.3</span>
-    </div>
-</footer>
+    <!-- Footer (Authorized Users Only) -->
+    <!-- Added fixed-bottom -->
+    <footer class="footer py-3 fixed-bottom">
+        <div class="container d-flex justify-content-between align-items-center text-light">
+            <span class="fw-lighter small d-flex align-items-center">
+                <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="16" height="16" class="me-2">
+                Purdue Apple Enterprise
+            </span>
+            <span class="fw-lighter small">v0.1.4</span>
+        </div>
+    </footer>
+
+{% else %}
+
+    <!-- SPLASH SCREEN (Unauthenticated or Unauthorized Users) -->
+    <style>
+        /* Force the body background to Purdue Steel unconditionally for the splash screen */
+        body { 
+            background-color: var(--purdue-steel) !important; 
+        }
+    </style>
+    
+    <main class="d-flex flex-grow-1 flex-column align-items-center justify-content-center w-100">
+        <div class="card shadow-lg border-0 p-5 text-center" style="max-width: 420px; width: 90%; border-radius: 1.25rem;">
+            <div class="mb-0">
+                <img src="/static/aura_icon.png" alt="AuraRAS Logo" width="84" height="84" class="rounded-4 shadow-sm mb-3">
+            </div>
+            <h1 class="h3 fw-bold mt-0 mb-0">AuraRAS</h1>
+            <p class="text-muted mb-5">Secure Remote Access</p>
+
+            {% if user.is_authenticated %}
+                <!-- Logged in, but unassigned/unauthorized -->
+                <i class="bi bi-x-octagon-fill text-danger mb-2" style="font-size: 3rem;"></i>
+                <h2 class="h5 fw-bold">Access Denied</h2>
+                <p class="text-muted mb-4">Your Microsoft Entra ID account is not authorized to view this portal.</p>
+                <form action="{% url 'oidc_logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger w-100 fw-bold">
+                        <i class="bi bi-box-arrow-right me-2"></i> Log Out
+                    </button>
+                </form>
+            {% else %}
+                <!-- Not logged in at all -->
+                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg w-100 fw-bold shadow-sm">
+                    <i class="bi bi-microsoft me-2"></i> Sign In with Microsoft
+                </a>
+            {% endif %}
+        </div>
+
+        <!-- Purdue Branding Below Splash Card -->
+        <div class="text-light mt-4">
+            <span class="fw-lighter small d-flex align-items-center">
+                <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="28" height="28" class="me-2">
+                Purdue Apple Enterprise
+            </span>
+        </div>
+    </main>
+
+{% endif %}
 
 <!-- jQuery (Required for DataTables) -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <!-- Bootstrap 5 JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<!-- DataTables JS -->
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 
-<!-- Initialize DataTables -->
+<!-- LAPS AJAX Logic -->
 <script>
-    $(document).ready(function() {
-        $('#endpointsTable').DataTable({
-            "pageLength": 25, // Default to 25 items per page
-            "lengthMenu": [[25, 50, 100, 500, 1000], [25, 50, 100, 500, 1000]], // The user configurable options
-            
-            // Custom DOM positioning string:
-            // f = filter, i = info, t = table, l = length, p = pagination
-            "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
-                   "<'row'<'col-sm-12'tr>>" +
-                   "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
-            
-            "language": {
-                // Replaces the "Search:" label with a Bootstrap Icon
-                "search": "<i class='bi bi-search text-muted fs-5'></i>",
-                "searchPlaceholder": "Filter",
-                "lengthMenu": "Show: _MENU_",
-                "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
-                "infoEmpty": "0 - 0 of 0",
-                "infoFiltered": "(filtered from _MAX_)"
-            },
-            "order": [[3, "desc"]], // Automatically sort by the 'Last Check-in' column (Index 3) descending
-            "columnDefs": [
-                { "orderable": false, "targets": 4 } // Disable sorting on the Actions column since it's just buttons
-            ]
-        });
+    let lapsModalInstance;
+    document.addEventListener("DOMContentLoaded", function() {
+        const modalEl = document.getElementById('lapsModal');
+        if (modalEl) {
+            lapsModalInstance = new bootstrap.Modal(modalEl);
+        }
     });
+
+    function openLapsModal(jssid, hostname) {
+        // Show Loading State First
+        $('#lapsModalBody').html(`
+            <div class="text-center py-4">
+                <div class="spinner-border text-secondary mb-2" role="status"></div>
+                <h6 class="text-muted fw-bold">${hostname}</h6>
+                <p class="text-muted small">Retrieving LAPS configuration...</p>
+            </div>
+        `);
+        lapsModalInstance.show();
+
+        // Query available Usernames
+        $.get(`/api/laps/usernames/${jssid}`, function(data) {
+            if (data.status === 'success') {
+                if (!data.jamf_user && !data.prestage_user) {
+                    $('#lapsModalBody').html('<div class="alert alert-warning mb-0 border-0 shadow-sm"><i class="bi bi-exclamation-triangle-fill me-2"></i> No LAPS accounts are configured or available for this computer.</div>');
+                    return;
+                }
+
+                // Swapped to table-borderless and table-striped
+                let tableHtml = `
+                    <h6 class="fw-bold mb-3">${hostname}</h6>
+                    <table class="table table-borderless table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3 border-bottom-0 rounded-start">Account Type</th>
+                                <th class="border-bottom-0">Username</th>
+                                <th class="text-center pe-3 border-bottom-0 rounded-end" style="width: 120px;">Password</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                // Conditionally Render Only Found Accounts
+                if (data.prestage_user) {
+                    tableHtml += `
+                        <tr>
+                            <td class="ps-3">PreStage Admin</td>
+                            <td class="fw-semibold">${data.prestage_user}</td>
+                            <td class="text-center pe-3" id="pwd-cell-prestage-${jssid}">
+                                <!-- Using btn-purdue-gold class -->
+                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword(${jssid}, 'prestage')">View</button>
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                if (data.jamf_user) {
+                    tableHtml += `
+                        <tr>
+                            <td class="ps-3">Jamf Admin</td>
+                            <td class="fw-semibold">${data.jamf_user}</td>
+                            <td class="text-center pe-3" id="pwd-cell-jamf-${jssid}">
+                                <!-- Using btn-purdue-gold class -->
+                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword(${jssid}, 'jamf')">View</button>
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                tableHtml += `</tbody></table>`;
+                $('#lapsModalBody').html(tableHtml);
+
+            } else {
+                $('#lapsModalBody').html(`<div class="alert alert-danger mb-0 border-0 shadow-sm">${data.message}</div>`);
+            }
+        }).fail(function(xhr) {
+            let errorMsg = xhr.responseJSON ? xhr.responseJSON.message : xhr.responseText;
+            $('#lapsModalBody').html(`<div class="alert alert-danger mb-0 border-0 shadow-sm">Error: ${errorMsg}</div>`);
+        });
+    }
+
+    function fetchLapsPassword(jssid, accountType) {
+        let cellId = `#pwd-cell-${accountType}-${jssid}`;
+        $(cellId).html('<div class="spinner-border spinner-border-sm text-primary" role="status"></div>');
+        
+        $.get(`/api/laps/password/${jssid}/${accountType}`, function(data) {
+            if (data.status === 'success') {
+                $(cellId).html(`<span class="font-monospace fw-bold user-select-all">${data.password}</span>`);
+            } else {
+                $(cellId).html(`<span class="text-danger small">${data.message}</span>`);
+            }
+        }).fail(function(xhr) {
+            $(cellId).html(`<span class="text-danger small fw-bold">API Error</span>`);
+        });
+    }
 </script>
+
+<!-- Initialize DataTables (Only run if authenticated AND authorized) -->
+{% if user.is_authenticated %}
+    {% if user_role == 'Server Administrator' or user_role == 'Desktop Administrator' or user_role == 'Customer' %}
+    <!-- DataTables JS -->
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#endpointsTable').DataTable({
+                "pageLength": 25, 
+                "lengthMenu": [[25, 50, 100, 500, 1000], [25, 50, 100, 500, 1000]], 
+                "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
+                       "<'row'<'col-sm-12'tr>>" +
+                       "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
+                "language": {
+                    "search": "<i class='bi bi-search text-muted fs-5'></i>",
+                    "searchPlaceholder": "Search hostname...",
+                    "lengthMenu": "Show: _MENU_",
+                    "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
+                    "infoEmpty": "0 - 0 of 0",
+                    "infoFiltered": "(filtered from _MAX_)",
+                    "emptyTable": "No endpoints have registered with the server yet." 
+                },
+                "order": [[2, "desc"]], 
+                "columnDefs": [
+                    { "orderable": false, "targets": 3 } 
+                ]
+            });
+        });
+    </script>
+    {% endif %}
+{% endif %}
 </body>
 </html>

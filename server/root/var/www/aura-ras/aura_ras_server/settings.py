@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'api',
+    'mozilla_django_oidc',
 ]
 
 MIDDLEWARE = [
@@ -75,11 +76,14 @@ WSGI_APPLICATION = 'aura_ras_server.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'auraras_db',
+        'USER': 'auraras_user',
+        'PASSWORD': 'punyraauG0D,',
+        'HOST': 'localhost',
+        'PORT': '3306',
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -117,3 +121,26 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = '/var/www/aura-ras/static/'
+
+
+AUTHENTICATION_BACKENDS = (
+    'api.auth.EntraIDOIDCAuthenticationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+)
+
+# --- ENTRA ID (AZURE AD) OIDC SETTINGS ---
+OIDC_RP_CLIENT_ID = '89c48358-d160-4ffc-8150-43a2af643761'
+OIDC_RP_CLIENT_SECRET = '_u08Q~.EoNHFh-.BNBsIZtJa~wer8B4ncE10qbxE'
+
+# Replace YOUR_TENANT_ID in the URLs below with your actual Entra Directory Tenant ID
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.microsoftonline.com/4130bd39-7c53-419c-b1e5-8758d6d63f21/oauth2/v2.0/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://login.microsoftonline.com/4130bd39-7c53-419c-b1e5-8758d6d63f21/oauth2/v2.0/token'
+OIDC_OP_USER_ENDPOINT = 'https://graph.microsoft.com/oidc/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://login.microsoftonline.com/4130bd39-7c53-419c-b1e5-8758d6d63f21/discovery/v2.0/keys'
+
+OIDC_RP_SIGN_ALGO = 'RS256'
+OIDC_USE_NONCE = False
+
+# Where users go after they log in or log out successfully
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
