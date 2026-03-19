@@ -6,7 +6,10 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
     
-    # The frontend dashboard routes
+    # Add this line for the Entra ID authentication routing
+    path('oidc/', include('mozilla_django_oidc.urls')),
+    
     path('dashboard/', views.dashboard, name='dashboard'),
-    path('', views.dashboard), # Catch the root URL and serve the dashboard there too!
+    path('settings/', views.server_settings, name='server_settings'),
+    path('', views.dashboard),
 ]
