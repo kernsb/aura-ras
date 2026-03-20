@@ -49,13 +49,11 @@
         });
     </script>
 </head>
-<!-- Added overflow-y: scroll to permanently reserve scrollbar space and prevent layout wiggling -->
-<body class="d-flex flex-column min-vh-100" style="overflow-y: scroll;">
+<body class="d-flex flex-column min-vh-100">
 
 {% if user.is_authenticated and user_role == 'Server Administrator' or user.is_authenticated and user_role == 'Desktop Administrator' or user.is_authenticated and user_role == 'Customer' %}
     
     <!-- Navigation Bar (Authorized Users Only) -->
-    <!-- Added fixed-top -->
     <nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top" aria-label="Main Navigation">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="#">
@@ -90,7 +88,6 @@
     </nav>
 
     <!-- Main Content (Authorized Users Only) -->
-    <!-- Added explicit top and bottom margins to prevent sliding under the fixed nav/footer -->
     <main class="container" style="margin-top: 100px; margin-bottom: 80px;">
         <div class="row mb-4">
             <div class="col">
@@ -158,12 +155,10 @@
     <div class="modal fade" id="lapsModal" tabindex="-1" aria-labelledby="lapsModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content shadow-lg border-0">
-                <!-- Restyled header using Purdue Steel and White Text -->
                 <div class="modal-header border-0" style="background-color: var(--purdue-steel);">
                     <h5 class="modal-title fw-bold text-white" id="lapsModalLabel">
                         <i class="bi bi-key-fill text-white-50 me-2"></i> LAPS Passwords
                     </h5>
-                    <!-- Added btn-close-white to make the X button visible on the dark background -->
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body p-4" id="lapsModalBody">
@@ -179,7 +174,6 @@
     </div>
 
     <!-- Footer (Authorized Users Only) -->
-    <!-- Added fixed-bottom -->
     <footer class="footer py-3 fixed-bottom">
         <div class="container d-flex justify-content-between align-items-center text-light">
             <span class="fw-lighter small d-flex align-items-center">
@@ -194,7 +188,6 @@
 
     <!-- SPLASH SCREEN (Unauthenticated or Unauthorized Users) -->
     <style>
-        /* Force the body background to Purdue Steel unconditionally for the splash screen */
         body { 
             background-color: var(--purdue-steel) !important; 
         }
@@ -209,7 +202,6 @@
             <p class="text-muted mb-5">Secure Remote Access</p>
 
             {% if user.is_authenticated %}
-                <!-- Logged in, but unassigned/unauthorized -->
                 <i class="bi bi-x-octagon-fill text-danger mb-2" style="font-size: 3rem;"></i>
                 <h2 class="h5 fw-bold">Access Denied</h2>
                 <p class="text-muted mb-4">Your Microsoft Entra ID account is not authorized to view this portal.</p>
@@ -220,14 +212,12 @@
                     </button>
                 </form>
             {% else %}
-                <!-- Not logged in at all -->
                 <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg w-100 fw-bold shadow-sm">
                     <i class="bi bi-microsoft me-2"></i> Sign In with Microsoft
                 </a>
             {% endif %}
         </div>
 
-        <!-- Purdue Branding Below Splash Card -->
         <div class="text-light mt-4">
             <span class="fw-lighter small d-flex align-items-center">
                 <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="28" height="28" class="me-2">
@@ -254,7 +244,6 @@
     });
 
     function openLapsModal(jssid, hostname) {
-        // Show Loading State First
         $('#lapsModalBody').html(`
             <div class="text-center py-4">
                 <div class="spinner-border text-secondary mb-2" role="status"></div>
@@ -264,7 +253,6 @@
         `);
         lapsModalInstance.show();
 
-        // Query available Usernames
         $.get(`/api/laps/usernames/${jssid}`, function(data) {
             if (data.status === 'success') {
                 if (!data.jamf_user && !data.prestage_user) {
@@ -272,7 +260,6 @@
                     return;
                 }
 
-                // Swapped to table-borderless and table-striped
                 let tableHtml = `
                     <h6 class="fw-bold mb-3">${hostname}</h6>
                     <table class="table table-borderless table-striped table-hover align-middle mb-0">
@@ -284,16 +271,16 @@
                             </tr>
                         </thead>
                         <tbody>
+                            <!-- This hidden row reverses the striping order! -->
+                            <tr class="d-none"></tr>
                 `;
 
-                // Conditionally Render Only Found Accounts
                 if (data.prestage_user) {
                     tableHtml += `
                         <tr>
                             <td class="ps-3">PreStage Admin</td>
                             <td class="fw-semibold">${data.prestage_user}</td>
                             <td class="text-center pe-3" id="pwd-cell-prestage-${jssid}">
-                                <!-- Using btn-purdue-gold class -->
                                 <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword(${jssid}, 'prestage')">View</button>
                             </td>
                         </tr>
@@ -306,7 +293,6 @@
                             <td class="ps-3">Jamf Admin</td>
                             <td class="fw-semibold">${data.jamf_user}</td>
                             <td class="text-center pe-3" id="pwd-cell-jamf-${jssid}">
-                                <!-- Using btn-purdue-gold class -->
                                 <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword(${jssid}, 'jamf')">View</button>
                             </td>
                         </tr>
@@ -341,10 +327,9 @@
     }
 </script>
 
-<!-- Initialize DataTables (Only run if authenticated AND authorized) -->
+<!-- Initialize DataTables -->
 {% if user.is_authenticated %}
     {% if user_role == 'Server Administrator' or user_role == 'Desktop Administrator' or user_role == 'Customer' %}
-    <!-- DataTables JS -->
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script>
