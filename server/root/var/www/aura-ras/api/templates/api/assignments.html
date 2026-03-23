@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraRAS Admin Portal - Assignments</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- DataTables Bootstrap 5 CSS -->
+    <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <!-- Custom AuraRAS Styles -->
+    <link rel="stylesheet" href="/static/aura-style.css">
+    <link rel="apple-touch-icon" href="/static/aura_icon.png">
+
+    <script>
+        function applyTheme() {
+            const userPref = "{{ user_theme|default:'auto' }}";
+            let isDark = false;
+            if (userPref === 'dark') {
+                isDark = true;
+            } else if (userPref === 'light') {
+                isDark = false;
+            } else {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            document.documentElement.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
+        }
+        applyTheme();
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if ("{{ user_theme|default:'auto' }}" === 'auto') {
+                applyTheme();
+            }
+        });
+    </script>
+</head>
+<body class="d-flex flex-column min-vh-100">
+
+<nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top" aria-label="Main Navigation">
+    <div class="container">
+        <a class="navbar-brand d-flex align-items-center" href="{% url 'dashboard' %}">
+            <img src="/static/aura_icon.png" alt="AuraRAS Logo" width="42" height="42" class="d-inline-block align-text-top me-2 rounded">
+            AuraRAS<div class="fw-normal fs-6 text-white-50">&nbsp;&nbsp;&nbsp;Secure Remote Access</div>
+        </a>
+        
+        <div class="d-flex align-items-center">
+            {% if user.is_authenticated %}
+                {% if user_role == 'Server Administrator' or user_role == 'Desktop Administrator' %}
+                <a href="{% url 'computer_assignments' %}" class="btn btn-outline-light border-0 me-1 active" aria-label="Assignments" title="Assignments">
+                    <i class="bi bi-people-fill fs-5"></i>
+                </a>
+                {% endif %}
+                <a href="{% url 'server_settings' %}" class="btn btn-outline-light border-0 me-2" aria-label="Settings" title="Settings">
+                    <i class="bi bi-gear-fill fs-5"></i>
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle d-flex align-items-center border-0" type="button" id="userMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-person-circle fs-5 me-2"></i>
+                        {{ user.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="userMenu">
+                        <li><h6 class="dropdown-header">Role: {{ user_role }}</h6></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form action="{% url 'oidc_logout' %}" method="post" class="m-0 p-0">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item text-danger d-flex align-items-center">
+                                    <i class="bi bi-box-arrow-right me-2"></i> Log Out
+                                </button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</nav>
+
+<main class="container" style="margin-top: 100px; margin-bottom: 80px;">
+    <div class="row mb-4">
+        <div class="col d-flex justify-content-between align-items-end">
+            <div>
+                <h1 class="mb-0 h2">Customer Assignments</h1>
+                <p class="mb-0 mt-1">Assign 'Customer' users to specific computers to grant them secure remote access.</p>
+            </div>
+            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+            <div class="table-responsive">
+                <table id="assignmentsTable" class="table table-hover table-striped mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col" class="ps-4">Computer Name</th>
+                            <th scope="col">Assigned Customers</th>
+                            <th scope="col" class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for comp in computers %}
+                        <tr>
+                            <td class="ps-4 fw-semibold">{{ comp.hostname }}</td>
+                            <td>
+                                {% if comp.assigned_users.all %}
+                                    {% for u in comp.assigned_users.all %}
+                                        <span class="badge bg-secondary me-1">{{ u.username }}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted small">No assigned customers</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end pe-4">
+                                <button class="btn btn-sm btn-purdue-solid shadow-sm" 
+                                        onclick="openAssignmentModal('{{ comp.id }}', '{{ comp.hostname }}', '{% for u in comp.assigned_users.all %}{{ u.id }},{% endfor %}')">
+                                    <i class="bi bi-pencil-square me-1"></i> Manage
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Assignments Modal -->
+<div class="modal fade" id="assignmentModal" tabindex="-1" aria-labelledby="assignmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header border-0" style="background-color: var(--purdue-steel);">
+                <h5 class="modal-title fw-bold text-white" id="assignmentModalLabel">
+                    <i class="bi bi-people-fill text-white-50 me-2"></i> Manage Assignments
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            
+            <form method="POST" action="{% url 'computer_assignments' %}">
+                {% csrf_token %}
+                <input type="hidden" name="computer_id" id="assignComputerId">
+                
+                <div class="modal-body p-4 bg-light">
+                    <h6 id="assignComputerName" class="fw-bold mb-3 text-center"></h6>
+                    
+                    <div class="list-group shadow-sm border-0 rounded-3">
+                        {% for customer in customers %}
+                        <label class="list-group-item d-flex gap-3 align-items-center py-3 border-light border-bottom border-1">
+                            <input class="form-check-input flex-shrink-0 fs-5 mt-0" type="checkbox" name="assigned_users" value="{{ customer.id }}" id="chk-cust-{{ customer.id }}">
+                            <span>
+                                <strong class="d-block">{{ customer.first_name }} {{ customer.last_name }}</strong>
+                                <small class="d-block text-muted">{{ customer.username }}</small>
+                            </span>
+                        </label>
+                        {% empty %}
+                        <div class="p-4 text-center text-muted">
+                            <i class="bi bi-person-x fs-1 mb-2"></i>
+                            <p class="mb-0">No users with the 'Customer' role exist in the database.</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="modal-footer bg-light border-top-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary fw-semibold" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-purdue-gold shadow-sm fw-bold">Save Assignments</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<footer class="footer py-3 fixed-bottom">
+    <div class="container d-flex justify-content-between align-items-center text-light">
+        <span class="fw-lighter small d-flex align-items-center">
+            <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="28" height="28" class="me-2">
+            Purdue Apple Enterprise
+        </span>
+        <span class="fw-lighter small">v0.1.4</span>
+    </div>
+</footer>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+<script>
+    function openAssignmentModal(compId, hostname, assignedIdsStr) {
+        document.getElementById('assignComputerId').value = compId;
+        document.getElementById('assignComputerName').innerText = "Assign Customers to " + hostname;
+        
+        // Reset all checkboxes
+        document.querySelectorAll('input[name="assigned_users"]').forEach(cb => cb.checked = false);
+        
+        // Check the ones that are assigned
+        if (assignedIdsStr) {
+            const ids = assignedIdsStr.split(',');
+            ids.forEach(id => {
+                if (id.trim() !== '') {
+                    const cb = document.getElementById('chk-cust-' + id);
+                    if (cb) cb.checked = true;
+                }
+            });
+        }
+        
+        new bootstrap.Modal(document.getElementById('assignmentModal')).show();
+    }
+
+    $(document).ready(function() {
+        $('#assignmentsTable').DataTable({
+            "pageLength": 25, 
+            "lengthMenu": [[25, 50, 100, 500, 1000], [25, 50, 100, 500, 1000]], 
+            "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
+                   "<'row'<'col-sm-12'tr>>" +
+                   "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
+            "language": {
+                "search": "<i class='bi bi-search text-muted fs-5'></i>",
+                "searchPlaceholder": "Search hostname...",
+            },
+            "order": [[0, "asc"]], 
+            "columnDefs": [
+                { "orderable": false, "targets": 2 } 
+            ]
+        });
+    });
+</script>
+</body>
+</html>

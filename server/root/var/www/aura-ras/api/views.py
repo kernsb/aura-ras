@@ -1,8 +1,10 @@
 import json
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.contrib.auth.models import User
 from .models import Computer, GlobalSettings
 from .ssh_utils import sync_authorized_keys
 from .jamf_api import JamfAPI
@@ -29,10 +31,8 @@ def register_agent(request):
                 'hostname': hostname
             }
         )
-        
         sync_authorized_keys()
 
-        # Return the auto-incrementing ID back to the Mac for local storage
         return JsonResponse({
             'status': 'success', 
             'message': 'Registered successfully with AuraRAS',
@@ -49,10 +49,6 @@ def register_agent(request):
 @csrf_exempt
 @require_POST
 def unregister_agent(request):
-    """
-    Called during the Swift agent's uninstall routine. 
-    Deletes the endpoint from the database and immediately revokes its SSH key.
-    """
     try:
         data = json.loads(request.body)
         jssid = data.get('jssid')
@@ -63,7 +59,6 @@ def unregister_agent(request):
         deleted_count, _ = Computer.objects.filter(jssid=jssid).delete()
         
         if deleted_count > 0:
-            # Sync authorized keys to revoke SSH access immediately
             sync_authorized_keys()
             return JsonResponse({'status': 'success', 'message': 'Unregistered successfully'}, status=200)
         else:
@@ -74,18 +69,54 @@ def unregister_agent(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+@csrf_exempt
+@require_POST
+def checkin_agent(request):
+    """
+    Receives periodic telemetry updates from the Swift agent.
+    """
+    try:
+        data = json.loads(request.body)
+        jssid = data.get('jssid')
+
+        if not jssid:
+            return JsonResponse({'error': 'Missing jssid in payload'}, status=400)
+
+        computer = Computer.objects.filter(jssid=jssid).first()
+        if not computer:
+            return JsonResponse({'error': 'Computer not found. Please register first.'}, status=404)
+
+        if 'hostname' in data: computer.hostname = data['hostname']
+        if 'serial_number' in data: computer.serial_number = data['serial_number']
+        if 'last_user' in data: computer.last_user = data['last_user']
+        if 'primary_user' in data: computer.primary_user = data['primary_user']
+        
+        computer.last_checkin = timezone.now()
+        computer.save()
+
+        settings = GlobalSettings.load()
+        return JsonResponse({
+            'status': 'success', 
+            'checkin_interval_minutes': settings.agent_checkin_interval_minutes
+        }, status=200)
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 def dashboard(request):
-    """
-    Renders the public-facing Bootstrap dashboard displaying all registered endpoints.
-    """
     settings = GlobalSettings.load()
-    laps_enabled = settings.jamf_laps_enabled
     
     if request.user.is_authenticated:
         profile = getattr(request.user, 'profile', None)
         role = profile.role if profile else 'Customer'
         theme = profile.theme if profile else 'auto'
 
+        # SECURITY: LAPS button is never shown to Customers
+        laps_enabled = settings.jamf_laps_enabled if role in ['Server Administrator', 'Desktop Administrator'] else False
+
+        # RBAC: Customers only see endpoints specifically assigned to them
         if role in ['Server Administrator', 'Desktop Administrator']:
             computers = Computer.objects.all().order_by('-last_checkin')
         else:
@@ -94,6 +125,7 @@ def dashboard(request):
         computers = []
         role = None
         theme = 'auto'
+        laps_enabled = False
 
     return render(request, 'api/dashboard.html', {
         'computers': computers,
@@ -102,18 +134,44 @@ def dashboard(request):
         'laps_enabled': laps_enabled
     })
 
-def server_settings(request):
-    """
-    Renders and processes the Settings page.
-    Shows User Preferences to all authorized roles, and Global Settings to Server Admins.
-    """
+def computer_assignments(request):
     if not request.user.is_authenticated:
         return redirect('oidc_authentication_init')
         
     profile = getattr(request.user, 'profile', None)
     role = profile.role if profile else 'Customer'
     
-    # Allow all three valid roles to access the settings page
+    if role not in ['Server Administrator', 'Desktop Administrator']:
+        return redirect('dashboard')
+        
+    customer_users = User.objects.filter(profile__role='Customer').order_by('username')
+    computers = Computer.objects.all().order_by('hostname')
+    
+    if request.method == 'POST':
+        comp_id = request.POST.get('computer_id')
+        selected_user_ids = request.POST.getlist('assigned_users')
+        
+        if comp_id:
+            comp = Computer.objects.filter(id=comp_id).first()
+            if comp:
+                comp.assigned_users.set(selected_user_ids)
+        
+        return redirect('computer_assignments')
+        
+    return render(request, 'api/assignments.html', {
+        'computers': computers,
+        'customers': customer_users,
+        'user_role': role,
+        'user_theme': profile.theme if profile else 'auto'
+    })
+
+def server_settings(request):
+    if not request.user.is_authenticated:
+        return redirect('oidc_authentication_init')
+        
+    profile = getattr(request.user, 'profile', None)
+    role = profile.role if profile else 'Customer'
+    
     if role not in ['Server Administrator', 'Desktop Administrator', 'Customer']:
         return redirect('dashboard')
         
@@ -121,18 +179,15 @@ def server_settings(request):
     success = False
     
     if request.method == 'POST':
-        # 1. Save User Preferences (Available to everyone)
         if profile:
             theme = request.POST.get('theme')
             if theme in ['auto', 'light', 'dark']:
                 profile.theme = theme
-            
             timezone = request.POST.get('timezone')
             if timezone:
                 profile.timezone = timezone
             profile.save()
 
-        # 2. Save Global Settings (Server Admins ONLY)
         if role == 'Server Administrator':
             settings.jamf_url = request.POST.get('jamf_url')
             settings.jamf_client_id = request.POST.get('jamf_client_id')
@@ -161,10 +216,7 @@ def server_settings(request):
         'success': success
     })
 
-# --- NEW LAPS AJAX ENDPOINTS ---
-
 def laps_usernames(request, jssid):
-    """Returns the expected usernames for the UI table"""
     if not request.user.is_authenticated or not hasattr(request.user, 'profile'):
         return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
         
@@ -176,7 +228,6 @@ def laps_usernames(request, jssid):
         api = JamfAPI(settings.jamf_url, settings.jamf_client_id, settings.jamf_client_secret)
         mgmt_id = api.get_management_id(jssid)
         
-        # Fetch all available LAPS accounts
         accounts = api.get_laps_accounts(mgmt_id)
         jamf_user = None
         prestage_user = None
@@ -185,11 +236,9 @@ def laps_usernames(request, jssid):
             if acc.get('userSource') == 'JMF':
                 jamf_user = acc.get('username')
             elif acc.get('userSource') == 'MDM':
-                # Only map this from Jamf if not overridden by macOSLAPS EA
                 if settings.prestage_laps_type == 'jamf':
                     prestage_user = acc.get('username')
 
-        # Override PreStage user if using macOSLAPS EA
         if settings.prestage_laps_type == 'macoslaps':
             if settings.macoslaps_ea_id:
                 ea_val = api.get_extension_attribute(jssid, settings.macoslaps_ea_id)
@@ -205,7 +254,6 @@ def laps_usernames(request, jssid):
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 def laps_password(request, jssid, account_type):
-    """Triggers Jamf API to pull the password for the specified account (CAUSES ROTATION)"""
     if not request.user.is_authenticated or not hasattr(request.user, 'profile'):
         return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
         
@@ -222,12 +270,9 @@ def laps_password(request, jssid, account_type):
         if account_type == 'jamf':
             mgmt_id = api.get_management_id(jssid)
             accounts = api.get_laps_accounts(mgmt_id)
-            
-            # Use 'username' instead of 'guid'
             username = next((acc['username'] for acc in accounts if acc.get('userSource') == 'JMF'), None)
             if not username:
                 return JsonResponse({'status': 'error', 'message': 'Jamf Admin LAPS account not found.'}, status=404)
-                
             password = api.get_laps_password(mgmt_id, username)
             return JsonResponse({'status': 'success', 'password': password})
             
@@ -242,12 +287,9 @@ def laps_password(request, jssid, account_type):
             else:
                 mgmt_id = api.get_management_id(jssid)
                 accounts = api.get_laps_accounts(mgmt_id)
-                
-                # Use 'username' instead of 'guid'
                 username = next((acc['username'] for acc in accounts if acc.get('userSource') == 'MDM'), None)
                 if not username:
                     return JsonResponse({'status': 'error', 'message': 'PreStage Admin LAPS account not found.'}, status=404)
-                    
                 password = api.get_laps_password(mgmt_id, username)
                 return JsonResponse({'status': 'success', 'password': password})
         else:
