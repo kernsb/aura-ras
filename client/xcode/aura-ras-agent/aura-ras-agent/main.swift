@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - Global Configuration
-let agentVersion = "0.1.4"
+let agentVersion = "0.1.5"
 let privateKeyPath = "/var/root/.ssh/aura_ed25519"
 let publicKeyPath = "/var/root/.ssh/aura_ed25519.pub"
 
@@ -18,7 +18,6 @@ struct AuraRASConfig {
 func getManagedConfig() -> AuraRASConfig? {
     let bundleID = "edu.purdue.pae.aura-ras" as CFString
     
-    // Support parsing JSSID as either a String or an Integer (depending on how Jamf delivers it)
     let jssIDRaw = CFPreferencesCopyAppValue("JSSID" as CFString, bundleID)
     let jssID = (jssIDRaw as? String) ?? (jssIDRaw as? Int).map { String($0) } ?? ""
     
@@ -30,7 +29,6 @@ func getManagedConfig() -> AuraRASConfig? {
         return nil
     }
 
-    // Dynamically build the HTTPS API URL from the ServerAddress!
     guard let serverURL = URL(string: "https://\(serverAddress)/api/register") else {
         print("ERROR: Could not construct a valid URL from ServerAddress: \(serverAddress)")
         return nil
@@ -48,9 +46,13 @@ func ensureSSHKeysExist(forceRotate: Bool) -> String? {
     let fm = FileManager.default
     let sshDir = "/var/root/.ssh"
     
-    // Ensure the .ssh directory exists with strict permissions
     if !fm.fileExists(atPath: sshDir) {
-        try? fm.createDirectory(atPath: sshDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        do {
+            try fm.createDirectory(atPath: sshDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        } catch {
+            print("ERROR: Failed to create .ssh directory: \(error.localizedDescription)")
+            return nil
+        }
     }
     
     if forceRotate {
@@ -59,22 +61,33 @@ func ensureSSHKeysExist(forceRotate: Bool) -> String? {
         print("Rotating keys: Old SSH keys removed.")
     }
     
-    // Generate new Ed25519 keys if they don't exist
     if !fm.fileExists(atPath: privateKeyPath) {
         print("Generating new Ed25519 key pair...")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
-        // -t ed25519: Key type
-        // -f: Output file
-        // -N "": Empty passphrase
-        // -q: Quiet mode
         process.arguments = ["-t", "ed25519", "-f", privateKeyPath, "-N", "", "-q"]
-        try? process.run()
-        process.waitUntilExit()
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus != 0 {
+                print("ERROR: ssh-keygen failed with exit code \(process.terminationStatus)")
+            } else {
+                print("Successfully generated Ed25519 keys.")
+            }
+        } catch {
+            print("ERROR: Failed to execute ssh-keygen: \(error.localizedDescription)")
+            return nil
+        }
     }
     
-    // Read and return the public key
-    return try? String(contentsOfFile: publicKeyPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+    do {
+        let pubKey = try String(contentsOfFile: publicKeyPath, encoding: .utf8)
+        return pubKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    } catch {
+        print("ERROR: Could not read public key at \(publicKeyPath). \(error.localizedDescription)")
+        return nil
+    }
 }
 
 func unregisterFromServer(jssID: String, serverAddress: String) -> Bool {
@@ -91,22 +104,11 @@ func unregisterFromServer(jssID: String, serverAddress: String) -> Bool {
     
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
         defer { semaphore.signal() }
-        
-        if let error = error {
-            print("Network Error: \(error.localizedDescription)")
-            return
-        }
-        
-        if let httpResponse = response as? HTTPURLResponse {
-            if httpResponse.statusCode == 200 {
-                print("SUCCESS: Endpoint unregistered from server and SSH keys revoked.")
-                success = true
-            } else {
-                print("Server rejected unregistration or endpoint was not found. HTTP Status: \(httpResponse.statusCode)")
-            }
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+            print("SUCCESS: Endpoint unregistered from server and SSH keys revoked.")
+            success = true
         }
     }
-    
     task.resume()
     semaphore.wait()
     return success
@@ -130,51 +132,58 @@ func registerWithServer(jssID: String, role: String, publicKey: String, serverUR
     
     request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     
+    print("Attempting to register with server at \(serverURL.absoluteString)...")
+    
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
         defer { semaphore.signal() }
         
         if let error = error {
-            print("Network Error: \(error.localizedDescription)")
+            print("NETWORK ERROR: Failed to reach server. \(error.localizedDescription)")
             return
         }
         
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 200 {
                 if let data = data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let assignedID = json["id"] as? Int,
-                   let sshPort = json["ssh_port"] as? Int,
-                   let vncPort = json["vnc_port"] as? Int {
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     
-                    // Save the assigned server ID and ports locally so the LaunchDaemon can read them natively
-                    let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
-                    let dict = NSMutableDictionary(contentsOfFile: prefsPath) ?? NSMutableDictionary()
-                    dict.setValue(assignedID, forKey: "AuraID")
-                    dict.setValue(sshPort, forKey: "LocalSSHPort")
-                    dict.setValue(vncPort, forKey: "LocalVNCPort")
-                    dict.write(toFile: prefsPath, atomically: true)
-                    
-                    print("SUCCESS: Registered with AuraRAS Appliance. Assigned ID: \(assignedID)")
-                    success = true
+                    if let assignedID = json["id"] as? Int,
+                       let sshPort = json["ssh_port"] as? Int,
+                       let vncPort = json["vnc_port"] as? Int {
+                        
+                        let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
+                        let dict = NSMutableDictionary(contentsOfFile: prefsPath) ?? NSMutableDictionary()
+                        dict.setValue(assignedID, forKey: "AuraID")
+                        dict.setValue(sshPort, forKey: "LocalSSHPort")
+                        dict.setValue(vncPort, forKey: "LocalVNCPort")
+                        dict.write(toFile: prefsPath, atomically: true)
+                        
+                        print("SUCCESS: Registered with AuraRAS Appliance. Assigned ID: \(assignedID)")
+                        success = true
+                    } else {
+                        print("JSON ERROR: Server returned 200 OK, but the response was invalid or missing port numbers.")
+                        print("Raw Response: \(json)")
+                    }
                 } else {
-                    print("ERROR: Server returned success but failed to provide port assignments.")
+                    print("JSON ERROR: Could not parse 200 OK response data.")
+                    if let data = data, let str = String(data: data, encoding: .utf8) {
+                        print("Raw Body: \(str)")
+                    }
                 }
             } else {
-                print("Server rejected registration. HTTP Status: \(httpResponse.statusCode)")
-                if let data = data, let body = String(data: data, encoding: .utf8) {
-                    print("Response: \(body)")
+                print("SERVER ERROR: Registration rejected with HTTP Status \(httpResponse.statusCode)")
+                if let data = data, let str = String(data: data, encoding: .utf8) {
+                    print("Raw Response: \(str)")
                 }
             }
         }
     }
-    
     task.resume()
-    semaphore.wait() // Wait for the network request to finish before allowing the script to proceed
+    semaphore.wait()
     return success
 }
 
 func restartTunnel(config: AuraRASConfig) {
-    // Read the ports that the server assigned us during the registration call
     let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
     guard let dict = NSDictionary(contentsOfFile: prefsPath),
           let sshPort = dict["LocalSSHPort"] as? Int,
@@ -185,7 +194,6 @@ func restartTunnel(config: AuraRASConfig) {
 
     let daemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.tunnel.plist"
     
-    // Dynamically build the LaunchDaemon plist for the autossh reverse tunnel using the server-mandated ports
     let plistContent = """
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -229,24 +237,20 @@ func restartTunnel(config: AuraRASConfig) {
     """
     
     do {
-        // Write the plist to disk
         try plistContent.write(toFile: daemonPath, atomically: true, encoding: .utf8)
         
-        // Ensure root owns the plist and permissions are strict
         let chmod = Process()
         chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
         chmod.arguments = ["644", daemonPath]
         try? chmod.run()
         chmod.waitUntilExit()
 
-        // Unload the existing tunnel daemon (if it exists)
         let bootout = Process()
         bootout.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         bootout.arguments = ["bootout", "system", daemonPath]
         try? bootout.run()
         bootout.waitUntilExit()
         
-        // Load the new tunnel daemon
         let bootstrap = Process()
         bootstrap.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         bootstrap.arguments = ["bootstrap", "system", daemonPath]
@@ -255,12 +259,226 @@ func restartTunnel(config: AuraRASConfig) {
         
         if bootstrap.terminationStatus == 0 {
             print("Tunnel service successfully restarted on assigned ports (\(sshPort), \(vncPort)).")
-        } else {
-            print("WARNING: Tunnel service restart may have failed (status \(bootstrap.terminationStatus)).")
         }
     } catch {
         print("ERROR: Failed to write tunnel LaunchDaemon: \(error)")
     }
+}
+
+func configureXPCDaemon() {
+    let daemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.daemon.plist"
+    
+    let plistContent = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>edu.purdue.pae.aura-ras.daemon</string>
+        <key>MachServices</key>
+        <dict>
+            <key>edu.purdue.pae.aura-ras.daemon.xpc</key>
+            <true/>
+        </dict>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/Library/PrivilegedHelperTools/aura-ras-daemon</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+    </dict>
+    </plist>
+    """
+
+    do {
+        try plistContent.write(toFile: daemonPath, atomically: true, encoding: .utf8)
+        
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["644", daemonPath]
+        try? chmod.run()
+        chmod.waitUntilExit()
+
+        let bootout = Process()
+        bootout.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        bootout.arguments = ["bootout", "system", daemonPath]
+        try? bootout.run()
+        bootout.waitUntilExit()
+        
+        let bootstrap = Process()
+        bootstrap.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        bootstrap.arguments = ["bootstrap", "system", daemonPath]
+        try? bootstrap.run()
+        bootstrap.waitUntilExit()
+        
+        print("XPC Daemon successfully configured and loaded.")
+    } catch {
+        print("ERROR: Failed to write XPC LaunchDaemon: \(error)")
+    }
+}
+
+// MARK: - Telemetry & Check-in Functions
+
+func getSerialNumber() -> String {
+    let task = Process()
+    let pipe = Pipe()
+    task.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+    task.arguments = ["SPHardwareDataType"]
+    task.standardOutput = pipe
+    try? task.run()
+    task.waitUntilExit()
+    
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    if let output = String(data: data, encoding: .utf8) {
+        for line in output.components(separatedBy: .newlines) {
+            if line.contains("Serial Number (system)") || line.contains("Serial Number") {
+                let parts = line.components(separatedBy: ":")
+                if parts.count == 2 {
+                    return parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+        }
+    }
+    return "Unknown"
+}
+
+func getUserStats() -> (lastUser: String, primaryUser: String) {
+    let task = Process()
+    let pipe = Pipe()
+    task.executableURL = URL(fileURLWithPath: "/usr/bin/last")
+    task.standardOutput = pipe
+    try? task.run()
+    task.waitUntilExit()
+
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    guard let output = String(data: data, encoding: .utf8) else { return ("Unknown", "Unknown") }
+
+    var userCounts: [String: Int] = [:]
+    var lastUser = ""
+
+    let lines = output.components(separatedBy: .newlines)
+    for line in lines {
+        let components = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        guard let user = components.first, !user.isEmpty else { continue }
+
+        // Ignore system/hidden accounts in our parsing
+        let ignored = ["reboot", "shutdown", "root", "mbsetupuser", "wtmp"]
+        if ignored.contains(user) || user.hasPrefix("_") { continue }
+
+        if lastUser.isEmpty {
+            lastUser = user
+        }
+        userCounts[user, default: 0] += 1
+    }
+
+    let primaryUser = userCounts.max { a, b in a.value < b.value }?.key ?? "Unknown"
+    if lastUser.isEmpty { lastUser = "Unknown" }
+
+    return (lastUser, primaryUser)
+}
+
+func configureCheckinDaemon(intervalMinutes: Int) {
+    let daemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.checkin.plist"
+    let intervalSeconds = intervalMinutes * 60
+
+    // Check if the existing daemon is already configured with the correct interval
+    if let dict = NSDictionary(contentsOfFile: daemonPath),
+       let currentInterval = dict["StartInterval"] as? Int,
+       currentInterval == intervalSeconds {
+        print("Check-in daemon already configured for \(intervalMinutes) minutes. No changes needed.")
+        return
+    }
+
+    let plistContent = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>edu.purdue.pae.aura-ras.checkin</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/usr/local/aura-ras/aura-ras-agent</string>
+            <string>--checkin</string>
+        </array>
+        <key>StartInterval</key>
+        <integer>\(intervalSeconds)</integer>
+    </dict>
+    </plist>
+    """
+
+    do {
+        try plistContent.write(toFile: daemonPath, atomically: true, encoding: .utf8)
+        
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["644", daemonPath]
+        try? chmod.run()
+        chmod.waitUntilExit()
+
+        let bootout = Process()
+        bootout.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        bootout.arguments = ["bootout", "system", daemonPath]
+        try? bootout.run()
+        bootout.waitUntilExit()
+        
+        let bootstrap = Process()
+        bootstrap.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        bootstrap.arguments = ["bootstrap", "system", daemonPath]
+        try? bootstrap.run()
+        bootstrap.waitUntilExit()
+        
+        print("Check-in daemon loaded with new interval of \(intervalSeconds) seconds.")
+    } catch {
+        print("ERROR: Failed to write checkin LaunchDaemon: \(error)")
+    }
+}
+
+func performCheckin(config: AuraRASConfig) {
+    let serial = getSerialNumber()
+    let userStats = getUserStats()
+
+    let payload: [String: Any] = [
+        "jssid": Int(config.jssID) ?? 0,
+        "hostname": Host.current().localizedName ?? "Unknown-Mac",
+        "serial_number": serial,
+        "last_user": userStats.lastUser,
+        "primary_user": userStats.primaryUser
+    ]
+
+    guard let url = URL(string: "https://\(config.serverAddress)/api/checkin") else { return }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+    let semaphore = DispatchSemaphore(value: 0)
+
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        defer { semaphore.signal() }
+
+        if let error = error {
+            print("Check-in Network Error: \(error.localizedDescription)")
+            return
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
+           let data = data,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let interval = json["checkin_interval_minutes"] as? Int {
+
+            print("SUCCESS: Telemetry sent. Server requested interval: \(interval) minutes.")
+            configureCheckinDaemon(intervalMinutes: interval)
+
+        } else {
+            print("Check-in failed. HTTP Status: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        }
+    }
+    task.resume()
+    semaphore.wait()
 }
 
 // MARK: - Uninstallation Routine
@@ -270,21 +488,20 @@ func uninstallAuraRAS() {
     let fileManager = FileManager.default
     let tunnelDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.tunnel.plist"
     let helperDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.daemon.plist"
+    let checkinDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.checkin.plist"
     let installDir = "/usr/local/aura-ras"
     let helperDaemon = "/Library/PrivilegedHelperTools/aura-ras-daemon"
     let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
     
-    // 1. Force kill active ghost processes
     print("Terminating any active helper processes...")
     let killall = Process()
     killall.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-    // Include autossh to tear down the tunnel instantly
     killall.arguments = ["-9", "aura-ras-helper", "aura-ras-daemon", "autossh"]
     try? killall.run()
     killall.waitUntilExit()
     
-    // 2. Unload and remove LaunchDaemons
-    for path in [tunnelDaemonPath, helperDaemonPath] {
+    // Unload all 3 LaunchDaemons
+    for path in [tunnelDaemonPath, helperDaemonPath, checkinDaemonPath] {
         if fileManager.fileExists(atPath: path) {
             print("Unloading LaunchDaemon at \(path)...")
             let bootout = Process()
@@ -298,7 +515,6 @@ func uninstallAuraRAS() {
     }
     print("Removed LaunchDaemon plists.")
     
-    // 3. Unregister Helper App from LaunchServices
     print("Unregistering Helper App from LaunchServices...")
     let lsregister = Process()
     lsregister.executableURL = URL(fileURLWithPath: "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister")
@@ -306,25 +522,21 @@ func uninstallAuraRAS() {
     try? lsregister.run()
     lsregister.waitUntilExit()
 
-    // 4. Remove application directory
     if fileManager.fileExists(atPath: installDir) {
         try? fileManager.removeItem(atPath: installDir)
         print("Removed AuraRAS directory and binaries.")
     }
     
-    // 5. Remove root helper daemon
     if fileManager.fileExists(atPath: helperDaemon) {
         try? fileManager.removeItem(atPath: helperDaemon)
         print("Removed root XPC daemon.")
     }
 
-    // 6. Remove local preferences
     if fileManager.fileExists(atPath: prefsPath) {
         try? fileManager.removeItem(atPath: prefsPath)
         print("Removed local ID preferences.")
     }
 
-    // 7. Remove SSH keys
     if fileManager.fileExists(atPath: privateKeyPath) {
         try? fileManager.removeItem(atPath: privateKeyPath)
     }
@@ -343,6 +555,7 @@ func printUsage() {
     
     Options:
       --initialize    Register the endpoint with the AuraRAS server and establish the tunnel.
+      --checkin       Gather system telemetry and ping the AuraRAS server.
       --rotate-keys   Force generation of a new SSH keypair and update the AuraRAS server.
       --uninstall     Completely remove all AuraRAS components and configuration from this Mac.
       --version       Display the agent version.
@@ -367,23 +580,33 @@ if arguments.contains("--version") {
 let isRotation = arguments.contains("--rotate-keys")
 let isInit = arguments.contains("--initialize")
 let isUninstall = arguments.contains("--uninstall")
+let isCheckin = arguments.contains("--checkin")
 
-// Since this runs via postinstall script (or requires deep system changes), ensure we have root privileges
+// Ensure we have root privileges
 guard geteuid() == 0 else {
     print("FATAL ERROR: Commands must be run as root.")
     exit(1)
 }
 
 if isUninstall {
-    // Attempt to notify the server that this endpoint is being decommissioned
     if let config = getManagedConfig() {
         print("Notifying server of uninstallation...")
         _ = unregisterFromServer(jssID: config.jssID, serverAddress: config.serverAddress)
     } else {
         print("WARNING: Could not read MDM config to contact server. Proceeding with local cleanup only.")
     }
-    
     uninstallAuraRAS()
+    exit(0)
+}
+
+if isCheckin {
+    print("--- Starting AuraRAS Agent Telemetry Check-in ---")
+    guard let config = getManagedConfig() else {
+        print("Check-in aborted due to missing configuration.")
+        exit(1)
+    }
+    performCheckin(config: config)
+    print("--- Check-in Complete ---")
     exit(0)
 }
 
@@ -416,8 +639,16 @@ guard let publicKey = ensureSSHKeysExist(forceRotate: isRotation) else {
 let registrationSuccess = registerWithServer(jssID: config.jssID, role: config.role, publicKey: publicKey, serverURL: config.serverURL)
 
 if registrationSuccess {
-    // ALWAYS rebuild the plist and start the autossh daemon when initializing or rotating
+    // Rebuild the plist and start the autossh daemon
     restartTunnel(config: config)
+    
+    // Dynamically build and configure the XPC daemon
+    configureXPCDaemon()
+    
+    // 4. Immediately perform the first check-in to populate telemetry on the dashboard
+    // and initialize the repeating background LaunchDaemon
+    performCheckin(config: config)
+    
     print("--- \(isRotation ? "Rotation" : "Initialization") Complete ---")
     exit(0)
 } else {
