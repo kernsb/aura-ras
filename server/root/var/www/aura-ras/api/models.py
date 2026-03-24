@@ -14,7 +14,11 @@ class GlobalSettings(models.Model):
     )
     prestage_laps_type = models.CharField(max_length=20, choices=PRESTAGE_LAPS_CHOICES, default='jamf')
     macoslaps_ea_id = models.CharField(max_length=50, blank=True, null=True)
+    agent_checkin_interval_minutes = models.IntegerField(default=60)
     
+    custom_server_port_enabled = models.BooleanField(default=False)
+    custom_server_port = models.IntegerField(default=9922)
+
     def save(self, *args, **kwargs):
         self.pk = 1
         super(GlobalSettings, self).save(*args, **kwargs)

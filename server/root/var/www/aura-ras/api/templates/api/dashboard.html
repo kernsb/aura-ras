@@ -1,3 +1,4 @@
+{% load tz %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,6 +14,34 @@
     <!-- Custom AuraRAS Styles -->
     <link rel="stylesheet" href="/static/aura-style.css">
     <link rel="apple-touch-icon" href="/static/aura_icon.png">
+
+    <style>
+        /* Stoplight Status Indicators */
+        .status-dot {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 4px rgba(0,0,0,0.3);
+        }
+        .status-red { background-color: #dc3545; }
+        .status-yellow { background-color: #ffc107; }
+        .status-green { 
+            background-color: #198754; 
+            box-shadow: 0 0 8px rgba(25, 135, 84, 0.8); 
+        }
+        .status-blue { 
+            background-color: #0d6efd; 
+            box-shadow: 0 0 10px rgba(13, 110, 253, 0.9);
+            animation: pulse-blue 2s infinite; 
+        }
+        
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(13, 110, 253, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0); }
+        }
+    </style>
 
     <script>
         function applyTheme() {
@@ -52,6 +81,9 @@
             </a>
             
             <div class="d-flex align-items-center">
+                <a href="{% url 'dashboard' %}" class="btn btn-outline-light border-0 me-1 active" aria-label="Dashboard" title="Dashboard">
+                    <i class="bi bi-house-door-fill fs-5"></i>
+                </a>
                 {% if user_role == 'Server Administrator' or user_role == 'Desktop Administrator' %}
                 <a href="{% url 'computer_assignments' %}" class="btn btn-outline-light border-0 me-1" aria-label="Assignments" title="Assignments">
                     <i class="bi bi-people-fill fs-5"></i>
@@ -97,7 +129,9 @@
                         <caption class="visually-hidden">List of registered AuraRAS endpoints with connection actions</caption>
                         <thead class="table-light">
                             <tr>
-                                <th scope="col" class="ps-4">Computer Name</th>
+                                <!-- Status Column (Label Hidden) -->
+                                <th scope="col" class="text-center" style="width: 30px;"></th>
+                                <th scope="col" class="ps-2">Computer Name</th>
                                 <th scope="col">Role</th>
                                 <th scope="col">Serial Number</th>
                                 <th scope="col">Last User</th>
@@ -109,7 +143,10 @@
                         <tbody>
                             {% for comp in computers %}
                             <tr>
-                                <td class="ps-4 fw-semibold">{{ comp.hostname }}</td>
+                                <td class="text-center align-middle">
+                                    <span class="status-dot status-{{ comp.status_color }}" title="{{ comp.status_text }}" data-bs-toggle="tooltip"></span>
+                                </td>
+                                <td class="ps-2 fw-semibold">{{ comp.hostname }}</td>
                                 <td>
                                     {% if comp.role == 'Administrator' %}
                                         <span class="badge badge-admin">Administrator</span>
@@ -120,7 +157,12 @@
                                 <td>{{ comp.serial_number|default:"-" }}</td>
                                 <td>{{ comp.last_user|default:"-" }}</td>
                                 <td>{{ comp.primary_user|default:"-" }}</td>
-                                <td>{{ comp.last_checkin|date:"M d, Y g:i A" }}</td>
+                                <td>
+                                    <!-- Use Django's timezone tag to properly offset based on the user's settings profile -->
+                                    {% timezone user.profile.timezone|default:"UTC" %}
+                                        {{ comp.last_checkin|date:"M d, Y g:i A" }}
+                                    {% endtimezone %}
+                                </td>
                                 <td class="text-end pe-4">
                                     {% if laps_enabled %}
                                         <button class="btn btn-sm btn-outline-secondary me-2" 
@@ -177,7 +219,7 @@
                 <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="16" height="16" class="me-2">
                 Purdue Apple Enterprise
             </span>
-            <span class="fw-lighter small">v0.1.4</span>
+            <span class="fw-lighter small">v0.1.5</span>
         </div>
     </footer>
 
@@ -231,7 +273,26 @@
         if (modalEl) {
             lapsModalInstance = new bootstrap.Modal(modalEl);
         }
+        
+        // Initialize tooltips on initial page load
+        $('[data-bs-toggle="tooltip"]').tooltip();
     });
+
+    // Helper to safely copy text without clipboard API restrictions
+    function copyToClipboard(text, btnElement) {
+        const el = document.createElement('textarea');
+        el.value = text;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        
+        if (btnElement) {
+            const originalHtml = btnElement.innerHTML;
+            btnElement.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
+            setTimeout(() => { btnElement.innerHTML = originalHtml; }, 1500);
+        }
+    }
 
     function openLapsModal(jssid, hostname) {
         $('#lapsModalBody').html(`
@@ -266,10 +327,13 @@
                 if (data.prestage_user) {
                     tableHtml += `
                         <tr>
-                            <td class="ps-3">PreStage Admin</td>
-                            <td class="fw-semibold">${data.prestage_user}</td>
-                            <td class="text-center pe-3" id="pwd-cell-prestage-${jssid}">
-                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword(${jssid}, 'prestage')">View</button>
+                            <td class="ps-3 align-middle">PreStage Admin</td>
+                            <td class="fw-semibold align-middle">
+                                ${data.prestage_user}
+                                <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="copyToClipboard('${data.prestage_user}', this)" title="Copy Username"><i class="bi bi-clipboard"></i></button>
+                            </td>
+                            <td class="text-center pe-3 align-middle" id="pwd-cell-prestage-${jssid}">
+                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword('${jssid}', 'prestage')">View</button>
                             </td>
                         </tr>
                     `;
@@ -278,10 +342,13 @@
                 if (data.jamf_user) {
                     tableHtml += `
                         <tr>
-                            <td class="ps-3">Jamf Admin</td>
-                            <td class="fw-semibold">${data.jamf_user}</td>
-                            <td class="text-center pe-3" id="pwd-cell-jamf-${jssid}">
-                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword(${jssid}, 'jamf')">View</button>
+                            <td class="ps-3 align-middle">Jamf Admin</td>
+                            <td class="fw-semibold align-middle">
+                                ${data.jamf_user}
+                                <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="copyToClipboard('${data.jamf_user}', this)" title="Copy Username"><i class="bi bi-clipboard"></i></button>
+                            </td>
+                            <td class="text-center pe-3 align-middle" id="pwd-cell-jamf-${jssid}">
+                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword('${jssid}', 'jamf')">View</button>
                             </td>
                         </tr>
                     `;
@@ -304,7 +371,14 @@
         
         $.get(`/api/laps/password/${jssid}/${accountType}`, function(data) {
             if (data.status === 'success') {
-                $(cellId).html(`<span class="font-monospace fw-bold user-select-all">${data.password}</span>`);
+                // Safely escape single quotes if a password contains one so it doesn't break the JS onclick string
+                let safePwd = data.password.replace(/'/g, "\\'");
+                $(cellId).html(`
+                    <div class="d-flex align-items-center justify-content-center">
+                        <span class="font-monospace fw-bold user-select-all">${data.password}</span>
+                        <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="copyToClipboard('${safePwd}', this)" title="Copy Password"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                `);
             } else {
                 $(cellId).html(`<span class="text-danger small">${data.message}</span>`);
             }
@@ -319,7 +393,7 @@
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script>
         $(document).ready(function() {
-            $('#endpointsTable').DataTable({
+            var table = $('#endpointsTable').DataTable({
                 "pageLength": 25, 
                 "lengthMenu": [[25, 50, 100, 500, 1000], [25, 50, 100, 500, 1000]], 
                 "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
@@ -327,17 +401,24 @@
                        "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
                 "language": {
                     "search": "<i class='bi bi-search text-muted fs-5'></i>",
-                    "searchPlaceholder": "Search hostname...",
+                    "searchPlaceholder": "Filter Computers",
                     "lengthMenu": "Show: _MENU_",
                     "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
                     "infoEmpty": "0 - 0 of 0",
                     "infoFiltered": "(filtered from _MAX_)",
                     "emptyTable": "No endpoints have registered with the server yet." 
                 },
-                "order": [[5, "desc"]], 
+                "order": [[6, "desc"]], 
                 "columnDefs": [
-                    { "orderable": false, "targets": 6 } 
+                    { "orderable": false, "targets": [0, 7] }, // Disable sorting on Status dots and Actions
+                    // Disables search indexing on Status (0), Role (2), Check-in Date (6), and Actions (7)
+                    { "searchable": false, "targets": [0, 2, 6, 7] }
                 ]
+            });
+            
+            // Re-initialize tooltips when DataTables redraws (pagination, filtering, sorting)
+            table.on('draw.dt', function () {
+                $('[data-bs-toggle="tooltip"]').tooltip();
             });
         });
     </script>
