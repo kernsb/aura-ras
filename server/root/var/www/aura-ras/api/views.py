@@ -1,4 +1,7 @@
 import json
+import socket
+import subprocess
+from datetime import timedelta
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.utils import timezone
@@ -72,9 +75,6 @@ def unregister_agent(request):
 @csrf_exempt
 @require_POST
 def checkin_agent(request):
-    """
-    Receives periodic telemetry updates from the Swift agent.
-    """
     try:
         data = json.loads(request.body)
         jssid = data.get('jssid')
@@ -113,14 +113,61 @@ def dashboard(request):
         role = profile.role if profile else 'Customer'
         theme = profile.theme if profile else 'auto'
 
-        # SECURITY: LAPS button is never shown to Customers
         laps_enabled = settings.jamf_laps_enabled if role in ['Server Administrator', 'Desktop Administrator'] else False
 
-        # RBAC: Customers only see endpoints specifically assigned to them
         if role in ['Server Administrator', 'Desktop Administrator']:
             computers = Computer.objects.all().order_by('-last_checkin')
         else:
             computers = Computer.objects.filter(assigned_users=request.user).order_by('-last_checkin')
+            
+        # OPTIMIZATION: Fetch the local port statistics exactly once per page load to save resources
+        active_connections = ""
+        try:
+            # 'ss -tna' gets all active TCP sockets quickly without resolving DNS names
+            active_connections = subprocess.check_output(['ss', '-tna']).decode('utf-8')
+        except Exception:
+            pass
+
+        now = timezone.now()
+        
+        for comp in computers:
+            is_listening = False
+            
+            # 1. PING THE LOCAL REVERSE TUNNEL PORT
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.05) # 50 millisecond timeout is plenty for localhost
+                    s.connect(('127.0.0.1', comp.ssh_port))
+                    is_listening = True
+            except (socket.timeout, ConnectionRefusedError, OSError):
+                pass
+            
+            # 2. EVALUATE STATUS
+            if is_listening:
+                is_active = False
+                ssh_target = f"127.0.0.1:{comp.ssh_port}"
+                vnc_target = f"127.0.0.1:{comp.vnc_port}"
+                
+                # Check line-by-line to ensure ESTAB and the port are on the same active connection line
+                for line in active_connections.splitlines():
+                    if line.startswith("ESTAB") and (ssh_target in line or vnc_target in line):
+                        is_active = True
+                        break
+                        
+                if is_active:
+                    comp.status_color = 'blue'
+                    comp.status_text = 'Active Session Established'
+                else:
+                    comp.status_color = 'green'
+                    comp.status_text = 'Online & Tunnel Ready'
+            else:
+                if comp.last_checkin and (now - comp.last_checkin) <= timedelta(hours=24):
+                    comp.status_color = 'yellow'
+                    comp.status_text = 'Offline (Seen in the last 24 hours)'
+                else:
+                    comp.status_color = 'red'
+                    comp.status_text = 'Offline (Unreachable for > 24 hours)'
+
     else:
         computers = []
         role = None
@@ -203,6 +250,15 @@ def server_settings(request):
             interval = request.POST.get('agent_checkin_interval_minutes')
             if interval and interval.isdigit():
                 settings.agent_checkin_interval_minutes = int(interval)
+                
+            # Parse and save the custom server port configuration
+            settings.custom_server_port_enabled = request.POST.get('custom_server_port_enabled') == 'on'
+            if settings.custom_server_port_enabled:
+                port = request.POST.get('custom_server_port')
+                if port and port.isdigit():
+                    settings.custom_server_port = int(port)
+            else:
+                settings.custom_server_port = 9922
                 
             settings.save()
             

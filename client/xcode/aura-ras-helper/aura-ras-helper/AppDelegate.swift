@@ -1,8 +1,41 @@
 import Cocoa
 
-// Using @main natively on the AppDelegate forces Apple's standard C-level bootstrapper
-// to handle the LaunchServices and Apple Event lifecycles flawlessly.
+// 1. A foolproof file logger that macOS cannot filter or hide.
+class FileLogger {
+    static func log(_ message: String) {
+        let logPath = "/tmp/auraras_helper_debug.log"
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let timestamp = formatter.string(from: Date())
+        let fullMessage = "[\(timestamp)] \(message)\n"
+        
+        if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logPath)) {
+            handle.seekToEndOfFile()
+            if let data = fullMessage.data(using: .utf8) {
+                handle.write(data)
+            }
+            handle.closeFile()
+        } else {
+            try? fullMessage.write(to: URL(fileURLWithPath: logPath), atomically: true, encoding: .utf8)
+        }
+    }
+}
+
+// 2. Explicit entry point to bypass ghost Xcode Storyboards.
 @main
+struct AppRunner {
+    // CRITICAL FIX: NSApplication.delegate is a weak property.
+    // We MUST hold a strong reference here so it isn't instantly destroyed!
+    static let appDelegate = AppDelegate()
+    
+    static func main() {
+        FileLogger.log("--- AuraRAS Helper Executable Started ---")
+        let app = NSApplication.shared
+        app.delegate = appDelegate
+        app.run()
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     lazy var daemonConnection: NSXPCConnection = {
@@ -13,7 +46,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSLog("AuraRAS Helper is booting up. Registering Apple Event handler.")
+        // Explicitly set as accessory so it doesn't show a Dock icon
+        NSApp.setActivationPolicy(.accessory)
+        FileLogger.log("applicationWillFinishLaunching: Binding URL Handler.")
+        
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
@@ -23,21 +59,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Explicitly set as accessory so it doesn't show a Dock icon
-        NSApp.setActivationPolicy(.accessory)
-        NSLog("AuraRAS Helper application run loop has started natively.")
+        FileLogger.log("applicationDidFinishLaunching: App run loop is fully active.")
     }
     
     func fatalErrorAlert(_ message: String) {
-        NSLog("FATAL ERROR: \(message)")
+        FileLogger.log("FATAL ERROR: \(message)")
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "AuraRAS Helper Error"
             alert.informativeText = message
             alert.alertStyle = .critical
             
-            // 1. Try to load the universal ICNS from the Asset Catalog
-            // 2. Fall back to asking Finder to resolve the bundle icon
             if let appIcon = NSImage(named: "AppIcon") {
                 alert.icon = appIcon
             } else {
@@ -52,19 +84,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
-        NSLog("SUCCESS: handleURLEvent triggered! The click was intercepted.")
+        FileLogger.log("SUCCESS: handleURLEvent triggered! The click was intercepted by the Helper.")
         
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let url = URLComponents(string: urlString) else {
+              let components = URLComponents(string: urlString) else {
             fatalErrorAlert("Failed to parse incoming URL from the web dashboard.")
             return
         }
 
-        let type = url.queryItems?.first(where: { $0.name == "type" })?.value
-        let port = url.queryItems?.first(where: { $0.name == "port" })?.value ?? ""
-        let host = url.queryItems?.first(where: { $0.name == "host" })?.value ?? "Endpoint"
+        let type = components.queryItems?.first(where: { $0.name == "type" })?.value
+        let port = components.queryItems?.first(where: { $0.name == "port" })?.value ?? ""
+        let host = components.queryItems?.first(where: { $0.name == "host" })?.value ?? "Endpoint"
 
-        NSLog("Helper parsed URL successfully. Type: \(type ?? "nil"), Host: \(host), Port: \(port)")
+        FileLogger.log("URL Parsed -> Type: \(type ?? "nil"), Host: \(host), Port: \(port)")
 
         let daemon = daemonConnection.remoteObjectProxyWithErrorHandler { error in
             self.fatalErrorAlert("CRITICAL XPC Error: Could not connect to the root daemon.\n\nError: \(error.localizedDescription)")
@@ -75,7 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        NSLog("Requesting daemon to establish bridge to remote port \(port)...")
+        FileLogger.log("Requesting root daemon to establish bridge to remote port \(port)...")
         
         daemon.establishBridge(toRemotePort: port) { localPort in
             guard let localPort = localPort else {
@@ -83,7 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             
-            NSLog("Helper received valid proxy port from daemon: \(localPort)")
+            FileLogger.log("Received valid proxy port from daemon: \(localPort)")
             
             DispatchQueue.main.async {
                 if type == "vnc" {
@@ -98,31 +130,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func launchVNC(localPort: String, daemon: AuraRASTunnelProtocol?) {
-        NSLog("Launching Screen Sharing on local port \(localPort)")
+        FileLogger.log("Launching Screen Sharing on local port \(localPort)")
         if let vncURL = URL(string: "vnc://127.0.0.1:\(localPort)") {
             NSWorkspace.shared.open(vncURL)
         }
         
-        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { timer in
-            let apps = NSWorkspace.shared.runningApplications
-            if !apps.contains(where: { $0.bundleIdentifier == "com.apple.ScreenSharing" }) {
-                NSLog("Screen Sharing app closed. Tearing down bridge and exiting.")
-                daemon?.teardownBridge(localPort: localPort)
-                NSApp.terminate(nil)
-            }
-        }
+        monitorApp(bundleIdentifier: "com.apple.ScreenSharing", localPort: localPort, daemon: daemon)
     }
 
     func launchSSH(localPort: String, host: String, daemon: AuraRASTunnelProtocol?) {
-        NSLog("Prompting user for SSH credentials for host \(host)")
+        FileLogger.log("Prompting user for SSH credentials for host \(host)")
         let alert = NSAlert()
         alert.messageText = "Connect to \(host)"
         alert.informativeText = "Enter the local username for the remote Mac:"
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
         
-        // 1. Try to load the universal ICNS from the Asset Catalog
-        // 2. Fall back to asking Finder to resolve the bundle icon
         if let appIcon = NSImage(named: "AppIcon") {
             alert.icon = appIcon
         } else {
@@ -136,7 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         if alert.runModal() == .alertFirstButtonReturn {
             let user = input.stringValue
-            NSLog("User initiated SSH connection as '\(user)'. Launching Terminal.")
+            FileLogger.log("User initiated SSH connection as '\(user)'. Launching Terminal.")
             
             let command = "ssh -o StrictHostKeyChecking=no \(user)@127.0.0.1 -p \(localPort)"
             let appleScript = "tell application \"Terminal\"\nactivate\ndo script \"\(command)\"\nend tell"
@@ -148,18 +171,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.fatalErrorAlert("AppleScript Error launching Terminal: \(error)")
             }
             
+            monitorApp(bundleIdentifier: "com.apple.Terminal", localPort: localPort, daemon: daemon)
+        } else {
+            FileLogger.log("User cancelled SSH connection prompt.")
+            daemon?.teardownBridge(localPort: localPort)
+            NSApp.terminate(nil)
+        }
+    }
+    
+    func monitorApp(bundleIdentifier: String, localPort: String, daemon: AuraRASTunnelProtocol?) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
             Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { timer in
                 let apps = NSWorkspace.shared.runningApplications
-                if !apps.contains(where: { $0.bundleIdentifier == "com.apple.Terminal" }) {
-                    NSLog("Terminal app closed. Tearing down bridge and exiting.")
+                if !apps.contains(where: { $0.bundleIdentifier == bundleIdentifier }) {
+                    FileLogger.log("Target app \(bundleIdentifier) closed. Tearing down bridge and exiting.")
                     daemon?.teardownBridge(localPort: localPort)
                     NSApp.terminate(nil)
                 }
             }
-        } else {
-            NSLog("User cancelled SSH connection prompt.")
-            daemon?.teardownBridge(localPort: localPort)
-            NSApp.terminate(nil)
         }
     }
 }
