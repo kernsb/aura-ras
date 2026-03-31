@@ -165,8 +165,9 @@
                                 </td>
                                 <td class="text-end pe-4">
                                     {% if laps_enabled %}
+                                        <!-- Added escapejs to safely handle hostnames with single quotes -->
                                         <button class="btn btn-sm btn-outline-secondary me-2" 
-                                                onclick="openLapsModal('{{ comp.jssid }}', '{{ comp.hostname }}')"
+                                                onclick="openLapsModal('{{ comp.jssid }}', '{{ comp.hostname|escapejs }}')"
                                                 aria-label="View LAPS Passwords for {{ comp.hostname }}"
                                                 title="View LAPS Passwords">
                                             <i class="bi bi-key-fill"></i>
@@ -216,7 +217,7 @@
     <footer class="footer py-3 fixed-bottom">
         <div class="container d-flex justify-content-between align-items-center text-light">
             <span class="fw-lighter small d-flex align-items-center">
-                <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="16" height="16" class="me-2">
+                <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="28" height="28" class="me-2">
                 Purdue Apple Enterprise
             </span>
             <span class="fw-lighter small">v0.1.5</span>
@@ -274,23 +275,48 @@
             lapsModalInstance = new bootstrap.Modal(modalEl);
         }
         
-        // Initialize tooltips on initial page load
         $('[data-bs-toggle="tooltip"]').tooltip();
     });
 
-    // Helper to safely copy text without clipboard API restrictions
+    // Completely overhauled clipboard handler to defeat the Bootstrap Modal focus trap!
     function copyToClipboard(text, btnElement) {
-        const el = document.createElement('textarea');
-        el.value = text;
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-        
-        if (btnElement) {
-            const originalHtml = btnElement.innerHTML;
-            btnElement.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
-            setTimeout(() => { btnElement.innerHTML = originalHtml; }, 1500);
+        const showSuccess = () => {
+            if (btnElement) {
+                const originalHtml = btnElement.innerHTML;
+                btnElement.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
+                setTimeout(() => { btnElement.innerHTML = originalHtml; }, 1500);
+            }
+        };
+
+        const fallbackCopy = (textToCopy) => {
+            const el = document.createElement('textarea');
+            el.value = textToCopy;
+            el.setAttribute('readonly', '');
+            el.style.position = 'absolute';
+            el.style.left = '-9999px';
+            
+            // CRITICAL FIX: The textarea MUST be appended to the modal itself, not document.body!
+            // If placed in the body, the modal steals focus back instantly and blocks the copy command.
+            const modalNode = document.getElementById('lapsModal') || document.body;
+            modalNode.appendChild(el);
+            
+            el.select();
+            el.setSelectionRange(0, 99999);
+            
+            try {
+                document.execCommand('copy');
+                showSuccess();
+            } catch (err) {
+                console.error('Fallback copy failed', err);
+            }
+            
+            modalNode.removeChild(el);
+        };
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(showSuccess).catch(() => fallbackCopy(text));
+        } else {
+            fallbackCopy(text);
         }
     }
 
@@ -311,7 +337,7 @@
                     return;
                 }
 
-                let tableHtml = `
+                let tableHeader = `
                     <h6 class="fw-bold mb-3">${hostname}</h6>
                     <table class="table table-borderless table-striped table-hover align-middle mb-0">
                         <thead class="table-light">
@@ -321,40 +347,30 @@
                                 <th class="text-center pe-3 border-bottom-0 rounded-end" style="width: 120px;">Password</th>
                             </tr>
                         </thead>
-                        <tbody><tr class="d-none"></tr>
+                        <tbody id="dynamic-laps-rows"></tbody>
+                    </table>
                 `;
+                $('#lapsModalBody').html(tableHeader);
+                let tbody = $('#dynamic-laps-rows');
 
+                // Used modern template literals (` `) to completely eliminate the string-escaping syntax error
                 if (data.prestage_user) {
-                    tableHtml += `
-                        <tr>
-                            <td class="ps-3 align-middle">PreStage Admin</td>
-                            <td class="fw-semibold align-middle">
-                                ${data.prestage_user}
-                                <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="copyToClipboard('${data.prestage_user}', this)" title="Copy Username"><i class="bi bi-clipboard"></i></button>
-                            </td>
-                            <td class="text-center pe-3 align-middle" id="pwd-cell-prestage-${jssid}">
-                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword('${jssid}', 'prestage')">View</button>
-                            </td>
-                        </tr>
-                    `;
+                    let tr = $(`<tr><td class="ps-3 align-middle">PreStage Admin</td><td class="fw-semibold align-middle usr-td"></td><td class="text-center pe-3 align-middle" id="pwd-cell-prestage-${jssid}"><button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword('${jssid}', 'prestage')">View</button></td></tr>`);
+                    let copyUsrBtn = $('<button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" title="Copy Username"><i class="bi bi-clipboard"></i></button>');
+                    
+                    copyUsrBtn.on('click', function() { copyToClipboard(data.prestage_user, this); });
+                    tr.find('.usr-td').text(data.prestage_user).append(copyUsrBtn);
+                    tbody.append(tr);
                 }
 
                 if (data.jamf_user) {
-                    tableHtml += `
-                        <tr>
-                            <td class="ps-3 align-middle">Jamf Admin</td>
-                            <td class="fw-semibold align-middle">
-                                ${data.jamf_user}
-                                <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="copyToClipboard('${data.jamf_user}', this)" title="Copy Username"><i class="bi bi-clipboard"></i></button>
-                            </td>
-                            <td class="text-center pe-3 align-middle" id="pwd-cell-jamf-${jssid}">
-                                <button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword('${jssid}', 'jamf')">View</button>
-                            </td>
-                        </tr>
-                    `;
+                    let tr = $(`<tr><td class="ps-3 align-middle">Jamf Admin</td><td class="fw-semibold align-middle usr-td"></td><td class="text-center pe-3 align-middle" id="pwd-cell-jamf-${jssid}"><button class="btn btn-sm btn-purdue-gold w-100 fw-bold shadow-sm" onclick="fetchLapsPassword('${jssid}', 'jamf')">View</button></td></tr>`);
+                    let copyUsrBtn = $('<button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" title="Copy Username"><i class="bi bi-clipboard"></i></button>');
+                    
+                    copyUsrBtn.on('click', function() { copyToClipboard(data.jamf_user, this); });
+                    tr.find('.usr-td').text(data.jamf_user).append(copyUsrBtn);
+                    tbody.append(tr);
                 }
-                tableHtml += `</tbody></table>`;
-                $('#lapsModalBody').html(tableHtml);
 
             } else {
                 $('#lapsModalBody').html(`<div class="alert alert-danger mb-0 border-0 shadow-sm">${data.message}</div>`);
@@ -371,14 +387,16 @@
         
         $.get(`/api/laps/password/${jssid}/${accountType}`, function(data) {
             if (data.status === 'success') {
-                // Safely escape single quotes if a password contains one so it doesn't break the JS onclick string
-                let safePwd = data.password.replace(/'/g, "\\'");
-                $(cellId).html(`
-                    <div class="d-flex align-items-center justify-content-center">
-                        <span class="font-monospace fw-bold user-select-all">${data.password}</span>
-                        <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="copyToClipboard('${safePwd}', this)" title="Copy Password"><i class="bi bi-clipboard"></i></button>
-                    </div>
-                `);
+                let container = $('<div class="d-flex align-items-center justify-content-center"></div>');
+                let pwdSpan = $('<span class="font-monospace fw-bold user-select-all"></span>').text(data.password);
+                let copyBtn = $('<button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2" title="Copy Password"><i class="bi bi-clipboard"></i></button>');
+                
+                copyBtn.on('click', function() {
+                    copyToClipboard(data.password, this);
+                });
+
+                container.append(pwdSpan).append(copyBtn);
+                $(cellId).empty().append(container);
             } else {
                 $(cellId).html(`<span class="text-danger small">${data.message}</span>`);
             }
@@ -401,7 +419,7 @@
                        "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
                 "language": {
                     "search": "<i class='bi bi-search text-muted fs-5'></i>",
-                    "searchPlaceholder": "Filter Computers",
+                    "searchPlaceholder": "Filter Computers...",
                     "lengthMenu": "Show: _MENU_",
                     "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
                     "infoEmpty": "0 - 0 of 0",
@@ -410,13 +428,11 @@
                 },
                 "order": [[6, "desc"]], 
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 7] }, // Disable sorting on Status dots and Actions
-                    // Disables search indexing on Status (0), Role (2), Check-in Date (6), and Actions (7)
+                    { "orderable": false, "targets": [0, 7] },
                     { "searchable": false, "targets": [0, 2, 6, 7] }
                 ]
             });
             
-            // Re-initialize tooltips when DataTables redraws (pagination, filtering, sorting)
             table.on('draw.dt', function () {
                 $('[data-bs-toggle="tooltip"]').tooltip();
             });
