@@ -120,53 +120,65 @@ def dashboard(request):
         else:
             computers = Computer.objects.filter(assigned_users=request.user).order_by('-last_checkin')
             
-        # OPTIMIZATION: Fetch the local port statistics exactly once per page load to save resources
         active_connections = ""
         try:
-            # 'ss -tna' gets all active TCP sockets quickly without resolving DNS names
+            # We pull the socket stats ONCE per page load to drastically reduce server overhead
             active_connections = subprocess.check_output(['ss', '-tna']).decode('utf-8')
         except Exception:
             pass
 
         now = timezone.now()
         
+        try:
+            interval_minutes = int(settings.agent_checkin_interval_minutes)
+        except (ValueError, TypeError):
+            interval_minutes = 60
+            
+        grace_period_seconds = (interval_minutes + 15) * 60
+        
         for comp in computers:
-            is_listening = False
+            time_since_checkin = now - comp.last_checkin if comp.last_checkin else timedelta(days=999)
+            seconds_since = time_since_checkin.total_seconds()
             
-            # 1. PING THE LOCAL REVERSE TUNNEL PORT
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(0.05) # 50 millisecond timeout is plenty for localhost
-                    s.connect(('127.0.0.1', comp.ssh_port))
-                    is_listening = True
-            except (socket.timeout, ConnectionRefusedError, OSError):
-                pass
+            if seconds_since < 0:
+                seconds_since = abs(seconds_since)
             
-            # 2. EVALUATE STATUS
-            if is_listening:
+            # Step 1: Immediately evaluate time thresholds to filter offline devices first
+            if seconds_since > 86400: # 24 hours
+                comp.status_color = 'red'
+                comp.status_text = 'Offline (Unreachable for > 24 hours)'
+                
+            elif seconds_since > grace_period_seconds:
+                comp.status_color = 'yellow'
+                comp.status_text = 'Offline / Sleeping (Missed recent check-in)'
+                
+            else:
+                # Step 2: Device is recently seen. Perform the "Quick Glance" memory check!
+                is_listening = False
                 is_active = False
+                
                 ssh_target = f"127.0.0.1:{comp.ssh_port}"
                 vnc_target = f"127.0.0.1:{comp.vnc_port}"
                 
-                # Check line-by-line to ensure ESTAB and the port are on the same active connection line
+                # Check the loaded string line-by-line for both LISTEN and ESTAB statuses
                 for line in active_connections.splitlines():
-                    if line.startswith("ESTAB") and (ssh_target in line or vnc_target in line):
+                    if ssh_target in line:
+                        if line.startswith("LISTEN"):
+                            is_listening = True
+                        elif line.startswith("ESTAB"):
+                            is_active = True
+                    if vnc_target in line and line.startswith("ESTAB"):
                         is_active = True
-                        break
                         
                 if is_active:
                     comp.status_color = 'blue'
                     comp.status_text = 'Active Session Established'
-                else:
+                elif is_listening:
                     comp.status_color = 'green'
                     comp.status_text = 'Online & Tunnel Ready'
-            else:
-                if comp.last_checkin and (now - comp.last_checkin) <= timedelta(hours=24):
-                    comp.status_color = 'yellow'
-                    comp.status_text = 'Offline (Seen in the last 24 hours)'
                 else:
-                    comp.status_color = 'red'
-                    comp.status_text = 'Offline (Unreachable for > 24 hours)'
+                    comp.status_color = 'yellow'
+                    comp.status_text = 'Tunnel Disconnected (Network Interruption)'
 
     else:
         computers = []
@@ -251,7 +263,6 @@ def server_settings(request):
             if interval and interval.isdigit():
                 settings.agent_checkin_interval_minutes = int(interval)
                 
-            # Parse and save the custom server port configuration
             settings.custom_server_port_enabled = request.POST.get('custom_server_port_enabled') == 'on'
             if settings.custom_server_port_enabled:
                 port = request.POST.get('custom_server_port')
