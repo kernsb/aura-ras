@@ -610,7 +610,7 @@
 				<key>USE_HFS+_COMPRESSION</key>
 				<false/>
 				<key>VERSION</key>
-				<string>0.1.5</string>
+				<string>0.1.6</string>
 			</dict>
 			<key>TYPE</key>
 			<integer>0</integer>
@@ -749,7 +749,7 @@
 				<key>installer-script.product:id</key>
 				<string>edu.purdue.it.pae.aura-ras-client</string>
 				<key>installer-script.product:version</key>
-				<string>0.1.5</string>
+				<string>0.1.6</string>
 			</dict>
 			<key>BUILD_FORMAT</key>
 			<integer>0</integer>

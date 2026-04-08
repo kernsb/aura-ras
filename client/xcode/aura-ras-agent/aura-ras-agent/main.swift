@@ -1,7 +1,8 @@
 import Foundation
 
 // MARK: - Global Configuration
-let agentVersion = "0.1.5"
+let agentVersion = "0.1.6"
+let bundleID = "edu.purdue.pae.aura-ras" as CFString
 let privateKeyPath = "/var/root/.ssh/aura_ed25519"
 let publicKeyPath = "/var/root/.ssh/aura_ed25519.pub"
 
@@ -10,22 +11,22 @@ struct AuraRASConfig {
     let role: String
     let serverAddress: String
     let serverPort: Int
+    let apiSecret: String
     let serverURL: URL
 }
 
 // MARK: - Core Functions
 
 func getManagedConfig() -> AuraRASConfig? {
-    let bundleID = "edu.purdue.pae.aura-ras" as CFString
-    
     let jssIDRaw = CFPreferencesCopyAppValue("JSSID" as CFString, bundleID)
     let jssID = (jssIDRaw as? String) ?? (jssIDRaw as? Int).map { String($0) } ?? ""
     
     let role = CFPreferencesCopyAppValue("AgentRole" as CFString, bundleID) as? String ?? "Endpoint"
     let serverPort = CFPreferencesCopyAppValue("ServerPort" as CFString, bundleID) as? Int ?? 9922
+    let apiSecret = CFPreferencesCopyAppValue("APISecret" as CFString, bundleID) as? String ?? ""
     
     guard let serverAddress = CFPreferencesCopyAppValue("ServerAddress" as CFString, bundleID) as? String, !serverAddress.isEmpty else {
-        print("ERROR: ServerAddress is not strictly managed by MDM. Cannot locate AuraRAS Appliance. Aborting.")
+        print("ERROR: ServerAddress is not populated by MDM. Cannot locate AuraRAS Appliance. Aborting.")
         return nil
     }
 
@@ -39,7 +40,7 @@ func getManagedConfig() -> AuraRASConfig? {
         return nil
     }
     
-    return AuraRASConfig(jssID: jssID, role: role, serverAddress: serverAddress, serverPort: serverPort, serverURL: serverURL)
+    return AuraRASConfig(jssID: jssID, role: role, serverAddress: serverAddress, serverPort: serverPort, apiSecret: apiSecret, serverURL: serverURL)
 }
 
 func ensureSSHKeysExist(forceRotate: Bool) -> String? {
@@ -72,6 +73,7 @@ func ensureSSHKeysExist(forceRotate: Bool) -> String? {
             process.waitUntilExit()
             if process.terminationStatus != 0 {
                 print("ERROR: ssh-keygen failed with exit code \(process.terminationStatus)")
+                return nil
             } else {
                 print("Successfully generated Ed25519 keys.")
             }
@@ -90,16 +92,17 @@ func ensureSSHKeysExist(forceRotate: Bool) -> String? {
     }
 }
 
-func unregisterFromServer(jssID: String, serverAddress: String) -> Bool {
-    guard let url = URL(string: "https://\(serverAddress)/api/unregister") else { return false }
+func unregisterFromServer(config: AuraRASConfig) -> Bool {
+    guard let url = URL(string: "https://\(config.serverAddress)/api/unregister") else { return false }
     var success = false
     let semaphore = DispatchSemaphore(value: 0)
     
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(config.apiSecret)", forHTTPHeaderField: "Authorization")
     
-    let payload: [String: Any] = ["jssid": Int(jssID) ?? 0]
+    let payload: [String: Any] = ["jssid": Int(config.jssID) ?? 0]
     request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -114,25 +117,26 @@ func unregisterFromServer(jssID: String, serverAddress: String) -> Bool {
     return success
 }
 
-func registerWithServer(jssID: String, role: String, publicKey: String, serverURL: URL) -> Bool {
+func registerWithServer(config: AuraRASConfig, publicKey: String) -> Bool {
     var success = false
     let semaphore = DispatchSemaphore(value: 0)
     
-    var request = URLRequest(url: serverURL)
+    var request = URLRequest(url: config.serverURL)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(config.apiSecret)", forHTTPHeaderField: "Authorization")
     
     let hostname = Host.current().localizedName ?? "Unknown-Mac"
     let payload: [String: Any] = [
-        "jssid": Int(jssID) ?? 0,
-        "role": role,
+        "jssid": Int(config.jssID) ?? 0,
+        "role": config.role,
         "public_key": publicKey,
         "hostname": hostname
     ]
     
     request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     
-    print("Attempting to register with server at \(serverURL.absoluteString)...")
+    print("Attempting to register with server at \(config.serverURL.absoluteString)...")
     
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
         defer { semaphore.signal() }
@@ -145,30 +149,22 @@ func registerWithServer(jssID: String, role: String, publicKey: String, serverUR
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode == 200 {
                 if let data = data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let assignedID = json["id"] as? Int,
+                   let sshPort = json["ssh_port"] as? Int,
+                   let vncPort = json["vnc_port"] as? Int {
+                        
+                    let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
+                    let dict = NSMutableDictionary(contentsOfFile: prefsPath) ?? NSMutableDictionary()
+                    dict.setValue(assignedID, forKey: "AuraID")
+                    dict.setValue(sshPort, forKey: "LocalSSHPort")
+                    dict.setValue(vncPort, forKey: "LocalVNCPort")
+                    dict.write(toFile: prefsPath, atomically: true)
                     
-                    if let assignedID = json["id"] as? Int,
-                       let sshPort = json["ssh_port"] as? Int,
-                       let vncPort = json["vnc_port"] as? Int {
-                        
-                        let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
-                        let dict = NSMutableDictionary(contentsOfFile: prefsPath) ?? NSMutableDictionary()
-                        dict.setValue(assignedID, forKey: "AuraID")
-                        dict.setValue(sshPort, forKey: "LocalSSHPort")
-                        dict.setValue(vncPort, forKey: "LocalVNCPort")
-                        dict.write(toFile: prefsPath, atomically: true)
-                        
-                        print("SUCCESS: Registered with AuraRAS Appliance. Assigned ID: \(assignedID)")
-                        success = true
-                    } else {
-                        print("JSON ERROR: Server returned 200 OK, but the response was invalid or missing port numbers.")
-                        print("Raw Response: \(json)")
-                    }
+                    print("SUCCESS: Registered with AuraRAS Appliance. Assigned ID: \(assignedID)")
+                    success = true
                 } else {
-                    print("JSON ERROR: Could not parse 200 OK response data.")
-                    if let data = data, let str = String(data: data, encoding: .utf8) {
-                        print("Raw Body: \(str)")
-                    }
+                    print("JSON ERROR: Server returned 200 OK, but response was invalid or missing port numbers.")
                 }
             } else {
                 print("SERVER ERROR: Registration rejected with HTTP Status \(httpResponse.statusCode)")
@@ -182,6 +178,8 @@ func registerWithServer(jssID: String, role: String, publicKey: String, serverUR
     semaphore.wait()
     return success
 }
+
+// MARK: - LaunchDaemon Generation & Tunnel Restart
 
 func restartTunnel(config: AuraRASConfig) {
     let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
@@ -213,6 +211,8 @@ func restartTunnel(config: AuraRASConfig) {
             <string>ServerAliveCountMax=3</string>
             <string>-o</string>
             <string>StrictHostKeyChecking=accept-new</string>
+            <string>-o</string>
+            <string>ExitOnForwardFailure=yes</string>
             <string>-i</string>
             <string>\(privateKeyPath)</string>
             <string>-R</string>
@@ -232,6 +232,10 @@ func restartTunnel(config: AuraRASConfig) {
             <key>AUTOSSH_GATETIME</key>
             <string>0</string>
         </dict>
+        <key>StandardErrorPath</key>
+        <string>/var/log/autossh_error.log</string>
+        <key>StandardOutPath</key>
+        <string>/var/log/autossh.log</string>
     </dict>
     </plist>
     """
@@ -250,6 +254,9 @@ func restartTunnel(config: AuraRASConfig) {
         bootout.arguments = ["bootout", "system", daemonPath]
         try? bootout.run()
         bootout.waitUntilExit()
+        
+        // Brief pause to cleanly release sockets
+        Thread.sleep(forTimeInterval: 0.5)
         
         let bootstrap = Process()
         bootstrap.executableURL = URL(fileURLWithPath: "/bin/launchctl")
@@ -363,7 +370,6 @@ func getUserStats() -> (lastUser: String, primaryUser: String) {
         let components = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard let user = components.first, !user.isEmpty else { continue }
 
-        // Ignore system/hidden accounts in our parsing
         let ignored = ["reboot", "shutdown", "root", "mbsetupuser", "wtmp"]
         if ignored.contains(user) || user.hasPrefix("_") { continue }
 
@@ -383,7 +389,6 @@ func configureCheckinDaemon(intervalMinutes: Int) {
     let daemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.checkin.plist"
     let intervalSeconds = intervalMinutes * 60
 
-    // Check if the existing daemon is already configured with the correct interval
     if let dict = NSDictionary(contentsOfFile: daemonPath),
        let currentInterval = dict["StartInterval"] as? Int,
        currentInterval == intervalSeconds {
@@ -453,6 +458,8 @@ func performCheckin(config: AuraRASConfig) {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(config.apiSecret)", forHTTPHeaderField: "Authorization")
+    
     request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
     let semaphore = DispatchSemaphore(value: 0)
@@ -591,7 +598,7 @@ guard geteuid() == 0 else {
 if isUninstall {
     if let config = getManagedConfig() {
         print("Notifying server of uninstallation...")
-        _ = unregisterFromServer(jssID: config.jssID, serverAddress: config.serverAddress)
+        _ = unregisterFromServer(config: config)
     } else {
         print("WARNING: Could not read MDM config to contact server. Proceeding with local cleanup only.")
     }
@@ -636,7 +643,7 @@ guard let publicKey = ensureSSHKeysExist(forceRotate: isRotation) else {
 }
 
 // 3. Register with Appliance
-let registrationSuccess = registerWithServer(jssID: config.jssID, role: config.role, publicKey: publicKey, serverURL: config.serverURL)
+let registrationSuccess = registerWithServer(config: config, publicKey: publicKey)
 
 if registrationSuccess {
     // Rebuild the plist and start the autossh daemon

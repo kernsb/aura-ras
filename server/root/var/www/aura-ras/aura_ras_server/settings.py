@@ -144,3 +144,6 @@ OIDC_USE_NONCE = False
 # Where users go after they log in or log out successfully
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
+
+# --- AURA RAS SPECIFIC SECRETS & CONFIG ---
+AURA_API_SECRET = "40yCIy-QTL7ABKJHaFl5bor2addzhFaiH45eIv1rjUgXZdK1-ADsKH7wDJewWZJO"
