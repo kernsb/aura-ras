@@ -1,7 +1,25 @@
-/server/root/var/www/aura-ras/venv
-/server/root/var/www/aura-ras/api/__pycache__
-/server/root/var/www/aura-ras/aura_ras_server/__pycache__
-/server/root/var/www/aura-ras/api/migrations/__pycache__
+# --- Python & Django ---
+__pycache__/
+*.py[cod]
+*$py.class
+server/root/var/www/aura-ras/venv/
+venv/
+env/
+
+# --- Xcode & Swift ---
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+DerivedData/
+*.dSYM
+
+# --- Build Artifacts & Packages ---
+client/pkg/build/
+build/
+*.pkg
+*.app
+
+# --- macOS System Files ---
 .DS_Store
-.DS_Store
-.DS_Store
+.AppleDouble
+.LSOverride
