@@ -20,12 +20,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-kep*)uv$#*t13dmqf8-%3(to4zp8g_rhzdhuy%%s%04!0i)i^5'
+SECRET_KEY = 'your-django-secret-key'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['1350-asus.cla.purdue.edu', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['your-server.company.com', 'localhost', '127.0.0.1']
 
 
 # Application definition
@@ -79,7 +79,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'auraras_db',
         'USER': 'auraras_user',
-        'PASSWORD': 'punyraauG0D,',
+        'PASSWORD': 'you-db-password',
         'HOST': 'localhost',
         'PORT': '3306',
     }
@@ -129,14 +129,14 @@ AUTHENTICATION_BACKENDS = (
 )
 
 # --- ENTRA ID (AZURE AD) OIDC SETTINGS ---
-OIDC_RP_CLIENT_ID = '89c48358-d160-4ffc-8150-43a2af643761'
-OIDC_RP_CLIENT_SECRET = '_u08Q~.EoNHFh-.BNBsIZtJa~wer8B4ncE10qbxE'
+OIDC_RP_CLIENT_ID = 'your-oidc-rp-client-id'
+OIDC_RP_CLIENT_SECRET = 'your-oidc-rp-client-secret'
 
 # Replace YOUR_TENANT_ID in the URLs below with your actual Entra Directory Tenant ID
-OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.microsoftonline.com/4130bd39-7c53-419c-b1e5-8758d6d63f21/oauth2/v2.0/authorize'
-OIDC_OP_TOKEN_ENDPOINT = 'https://login.microsoftonline.com/4130bd39-7c53-419c-b1e5-8758d6d63f21/oauth2/v2.0/token'
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.microsoftonline.com/your-entra-tenant-id/oauth2/v2.0/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://login.microsoftonline.com/your-entra-tenant-id/oauth2/v2.0/token'
 OIDC_OP_USER_ENDPOINT = 'https://graph.microsoft.com/oidc/userinfo'
-OIDC_OP_JWKS_ENDPOINT = 'https://login.microsoftonline.com/4130bd39-7c53-419c-b1e5-8758d6d63f21/discovery/v2.0/keys'
+OIDC_OP_JWKS_ENDPOINT = 'https://login.microsoftonline.com/your-entra-tenant-id/discovery/v2.0/keys'
 
 OIDC_RP_SIGN_ALGO = 'RS256'
 OIDC_USE_NONCE = False
@@ -146,4 +146,4 @@ LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 
 # --- AURA RAS SPECIFIC SECRETS & CONFIG ---
-AURA_API_SECRET = "40yCIy-QTL7ABKJHaFl5bor2addzhFaiH45eIv1rjUgXZdK1-ADsKH7wDJewWZJO"
+AURA_API_SECRET = "your-aura-api-secret"
