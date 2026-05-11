@@ -579,6 +579,8 @@
 				</dict>
 				<key>PREINSTALL_PATH</key>
 				<dict>
+					<key>PATH</key>
+					<string>preinstall</string>
 					<key>PATH_TYPE</key>
 					<integer>1</integer>
 				</dict>
@@ -610,7 +612,7 @@
 				<key>USE_HFS+_COMPRESSION</key>
 				<false/>
 				<key>VERSION</key>
-				<string>0.1.6</string>
+				<string>0.1.7</string>
 			</dict>
 			<key>TYPE</key>
 			<integer>0</integer>
@@ -749,7 +751,7 @@
 				<key>installer-script.product:id</key>
 				<string>edu.purdue.it.pae.aura-ras-client</string>
 				<key>installer-script.product:version</key>
-				<string>0.1.6</string>
+				<string>0.1.7</string>
 			</dict>
 			<key>BUILD_FORMAT</key>
 			<integer>0</integer>
