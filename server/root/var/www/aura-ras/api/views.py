@@ -407,10 +407,10 @@ def laps_password(request, jssid, account_type):
         if account_type == 'jamf':
             mgmt_id = api.get_management_id(jssid)
             accounts = api.get_laps_accounts(mgmt_id)
-            guid = next((acc.get('clientAccountId') for acc in accounts if acc.get('userSource') == 'JMF'), None)
-            if not guid:
+            username = next((acc.get('username') for acc in accounts if acc.get('userSource') == 'JMF'), None)
+            if not username:
                 return JsonResponse({'status': 'error', 'message': 'Jamf Admin LAPS account not found.'}, status=404)
-            password = api.get_laps_password(mgmt_id, guid)
+            password = api.get_laps_password(mgmt_id, username)
             return JsonResponse({'status': 'success', 'password': password})
             
         elif account_type == 'prestage':
@@ -424,10 +424,10 @@ def laps_password(request, jssid, account_type):
             else:
                 mgmt_id = api.get_management_id(jssid)
                 accounts = api.get_laps_accounts(mgmt_id)
-                guid = next((acc.get('clientAccountId') for acc in accounts if acc.get('userSource') == 'MDM'), None)
-                if not guid:
+                username = next((acc.get('username') for acc in accounts if acc.get('userSource') == 'MDM'), None)
+                if not username:
                     return JsonResponse({'status': 'error', 'message': 'PreStage Admin LAPS account not found.'}, status=404)
-                password = api.get_laps_password(mgmt_id, guid)
+                password = api.get_laps_password(mgmt_id, username)
                 return JsonResponse({'status': 'success', 'password': password})
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid account type specified.'}, status=400)
