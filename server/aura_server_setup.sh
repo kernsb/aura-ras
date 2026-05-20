@@ -120,7 +120,7 @@ if [ "$MODE" == "upgrade" ]; then
     sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && pip install --upgrade django mysqlclient mozilla-django-oidc cryptography requests -q"
 
     echo -e "${GREEN}[*] Applying Database Migrations...${NC}"
-    sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && python manage.py migrate"
+    sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && python manage.py makemigrations api && python manage.py migrate"
 
     echo -e "${GREEN}[*] Restarting Services...${NC}"
     systemctl restart ${WEB_SERVICE}
