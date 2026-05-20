@@ -12,8 +12,9 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
 
-from .models import Computer, GlobalSettings
+from .models import Computer, GlobalSettings, UserProfile
 from .ssh_utils import sync_authorized_keys
 from .jamf_api import JamfAPI
 
@@ -154,6 +155,32 @@ def checkin_agent(request):
 
 # --- WEB DASHBOARD VIEWS ---
 
+@login_required
+@require_POST
+def update_user_preferences(request):
+    """
+    Silently handles background AJAX requests to save UI preferences 
+    to the user's database profile.
+    """
+    try:
+        data = json.loads(request.body)
+        
+        profile, created = UserProfile.objects.get_or_create(user=request.user)
+        
+        if 'rows_per_page' in data:
+            profile.rows_per_page = int(data['rows_per_page'])
+        
+        if 'auto_refresh_interval' in data:
+            profile.auto_refresh_interval = int(data['auto_refresh_interval'])
+            
+        profile.save()
+        return JsonResponse({'status': 'success'})
+        
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Invalid integer provided.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
 def dashboard(request):
     settings_obj = GlobalSettings.load()
     
@@ -204,6 +231,7 @@ def dashboard(request):
                 is_listening = False
                 is_active = False
                 
+                # IPv4-Only check for the SSH tunnel socket
                 try:
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                         s.settimeout(0.05)

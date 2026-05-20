@@ -33,6 +33,10 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=50, default='Customer')
     theme = models.CharField(max_length=10, default='auto')
     timezone = models.CharField(max_length=50, default='UTC')
+    
+    # User interface persistent preferences
+    rows_per_page = models.IntegerField(default=25)
+    auto_refresh_interval = models.IntegerField(default=15) # Stored in minutes
 
 class Computer(models.Model):
     ROLE_CHOICES = (
