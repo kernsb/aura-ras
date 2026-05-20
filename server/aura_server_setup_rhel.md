@@ -1,6 +1,6 @@
-# AuraRAS Production Server Setup Guide (RHEL / Oracle Linux 9)
+# AuraRAS Production Server Setup Guide (RHEL / Oracle Linux)
 
-This guide walks you through deploying the AuraRAS infrastructure onto a clean Oracle Linux 9, RHEL 9, AlmaLinux 9, or Rocky Linux 9 server using the files hosted in this repository.
+This guide walks you through deploying the AuraRAS infrastructure onto a clean RHEL, Oracle Linux, AlmaLinux, or Rocky Linux server using the files hosted in this repository.
 
 > **⚠️ STOP:** Before proceeding, ensure you have reviewed the `prerequisites.md` document and have your SSL certificates, API credentials, and network firewall rules ready.
 
@@ -62,7 +62,7 @@ Clone this repository and move the server files into their production locations.
 ```bash
 # Clone the repository to your home directory
 cd ~
-git clone https://github.com/kernsb/aura-ras.git
+git clone [https://github.com/kernsb/aura-ras.git](https://github.com/kernsb/aura-ras.git)
 
 # Move the Django web application to the Apache web root
 sudo cp -r aura-ras/server/root/var/www/aura-ras /var/www/
@@ -101,10 +101,11 @@ nano aura_ras_server/settings.py
 Update the following sections:
 
 1. **`SECRET_KEY`**: Generate a new random Django secret key.
-2. **`DATABASES`**: Enter the `YourSecureDbPassword` you created in Step 2. 
+2. **`ALLOWED_HOSTS`**: Add your server's DNS name (e.g., `['auraras.yourdomain.edu']`).
+3. **`DATABASES`**: Enter the `YourSecureDbPassword` you created in Step 2. 
    * *If using an externally hosted MySQL 8.4+ database, ensure you update `'HOST'` and set `'PORT'` to `'3306'`. You may also need to provide an `'OPTIONS'` dictionary with your OS CA Certificate bundle to fulfill strict `caching_sha2_password` SSL requirements.*
-3. **Entra ID (OIDC)**: Enter your `OIDC_RP_CLIENT_ID`, `OIDC_RP_CLIENT_SECRET`, and Tenant ID URLs.
-4. **`AURA_API_SECRET`**: Enter your 64-character pre-shared key (Must match the MDM Configuration Profile sent to Macs). Be careful not to include hidden newline characters if pasting from the terminal.
+4. **Entra ID (OIDC)**: Enter your `OIDC_RP_CLIENT_ID`, `OIDC_RP_CLIENT_SECRET`, and Tenant ID URLs.
+5. **`AURA_API_SECRET`**: Enter your 64-character pre-shared key (Must match the MDM Configuration Profile sent to Macs). Be careful not to include hidden newline characters if pasting from the terminal.
 
 Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`).
 
@@ -139,15 +140,7 @@ sudo chmod 644 /etc/ssh/sshd_config.d/99-aura-ras.conf
 sudo systemctl restart sshd
 ```
 
-> **Enterprise Security Note (`AllowGroups`):** Many enterprise RHEL environments restrict SSH access using the `AllowGroups` directive in `/etc/ssh/sshd_config`. If your server uses this, you **must** add the `aura-tunnel` user to one of the allowed groups (e.g., `users`), or the connection will be instantly rejected.
-> ```bash
-> # Check if AllowGroups is configured
-> sudo grep -i AllowGroups /etc/ssh/sshd_config
-> 
-> # If it is, add aura-tunnel to an allowed group (e.g., 'users')
-> sudo usermod -aG users aura-tunnel
-> sudo systemctl restart sshd
-> ```
+> **⚠️ ENTERPRISE SECURITY WARNING (`AllowGroups`):** > Many strictly managed RHEL environments restrict SSH access using the `AllowGroups` directive in `/etc/ssh/sshd_config`. If your server enforces this, you **must** add the `aura-tunnel` user to an allowed group, or client tunnels will be instantly rejected. See the Troubleshooting section at the bottom of this document for instructions.
 
 ## Step 8: Apache & SSL Configuration
 
@@ -176,7 +169,7 @@ Configure `httpd` to serve the Web Dashboard on port `443` and the Agent API on 
    # HTTP (Port 80) - Redirect all traffic to HTTPS
    <VirtualHost *:80>
        ServerName auraras.yourdomain.edu
-       Redirect permanent / https://auraras.yourdomain.edu/
+       Redirect permanent / [https://auraras.yourdomain.edu/](https://auraras.yourdomain.edu/)
    </VirtualHost>
    
    # HTTPS (Port 443 & 8443) - Django Application via WSGI
@@ -275,7 +268,31 @@ sudo firewall-cmd --reload
 
 ---
 
-## Troubleshooting Network Access
-If your server's local `firewalld` is configured correctly (and confirmed via `sudo firewall-cmd --list-all`), but you receive a **"Connection Timed Out"** error when trying to load the web dashboard or register a client:
-* **The Cause:** An upstream network appliance (Campus Edge Firewall, AWS Security Group, VMware NSX, etc.) is silently dropping your packets before they reach the OS. 
-* **The Fix:** You must request your network infrastructure team to open inbound TCP traffic for ports `443`, `8443`, and `9922` pointing to your server's public IP address.
+## Troubleshooting: "Tunnel Disconnected" Errors
+
+If your server setup is complete but your macOS clients are showing a **"Tunnel Disconnected"** status in the web dashboard, the server's SSH daemon or firewall is actively rejecting their inbound connections. 
+
+### 1. Check for Enterprise SSH Group Restrictions (Most Common)
+In enterprise environments, `sshd` is often configured to only allow specific groups to connect. You can check if the server is rejecting the connection by reviewing the secure log while a client attempts to connect:
+```bash
+sudo tail -n 20 /var/log/secure
+```
+If you see an error stating: `User aura-tunnel... not allowed because none of user's groups are listed in AllowGroups`, you must add the tunnel user to the approved list.
+
+1. Find the allowed groups on your server:
+   ```bash
+   sudo grep -i AllowGroups /etc/ssh/sshd_config
+   ```
+2. Add `aura-tunnel` to one of the groups returned by the previous command (e.g., `users`, `admins`):
+   ```bash
+   sudo usermod -aG GroupName aura-tunnel
+   ```
+3. Restart the SSH service:
+   ```bash
+   sudo systemctl restart sshd
+   ```
+
+### 2. Verify External Network Routing
+If your server's local `firewalld` is configured correctly (confirmed via `sudo firewall-cmd --list-all`), but clients still cannot reach the server, an upstream network appliance (Campus Edge Firewall, AWS Security Group, VMware NSX, etc.) is likely dropping your packets.
+
+You must request your network infrastructure team to open inbound TCP traffic for ports `443`, `8443`, and `9922` pointing to your server's public IP address.

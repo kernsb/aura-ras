@@ -1,6 +1,6 @@
-# AuraRAS Production Server Setup Guide (Ubuntu 24.04 LTS)
+# AuraRAS Production Server Setup Guide (Debian / Ubuntu)
 
-This guide walks you through deploying the AuraRAS infrastructure onto a clean Ubuntu 22.04 or 24.04 LTS server using the files hosted in this repository.
+This guide walks you through deploying the AuraRAS infrastructure onto a clean Debian or Ubuntu server using the files hosted in this repository.
 
 > **⚠️ STOP:** Before proceeding, ensure you have reviewed the `prerequisites.md` document and have your SSL certificates, API credentials, and network firewall rules ready.
 
