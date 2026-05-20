@@ -121,7 +121,7 @@
                                 <option value="dark" {% if profile.theme == 'dark' %}selected{% endif %}>Dark Mode</option>
                             </select>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-4">
                             <label for="timezone" class="form-label fw-semibold">Time Zone</label>
                             <select class="form-select" id="timezone" name="timezone">
                                 <option value="America/New_York" {% if profile.timezone == 'America/New_York' %}selected{% endif %}>Eastern Time (US & Canada)</option>
@@ -131,6 +131,11 @@
                                 <option value="UTC" {% if profile.timezone == 'UTC' %}selected{% endif %}>Coordinated Universal Time (UTC)</option>
                             </select>
                             <div class="form-text text-muted">Select the timezone for displaying "Last Check-in" times.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="autoRefreshInterval" class="form-label fw-semibold">Dashboard Auto-Refresh (Minutes)</label>
+                            <input type="number" class="form-control" id="autoRefreshInterval" name="auto_refresh_interval" value="{{ profile.auto_refresh_interval|default:'15' }}" min="1" max="1440">
+                            <div class="form-text text-muted">How often the main dashboard should automatically reload to fetch the latest connections.</div>
                         </div>
                     </div>
                 </div>
