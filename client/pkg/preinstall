@@ -1,16 +1,16 @@
 #!/bin/zsh
-# 1. Ask the existing agent to cleanly unregister from the server
+# Ask the existing agent to cleanly unregister from the server
 if [ -f "/usr/local/aura-ras/aura-ras-agent" ]; then
     echo "Running legacy agent uninstall..."
     /usr/local/aura-ras/aura-ras-agent --uninstall
 fi
 
-# 2. Forcefully kill any lingering SSH or AutoSSH processes
+# Forcefully kill any lingering SSH or AutoSSH processes
 echo "Purging any orphaned tunnel processes..."
 killall -9 autossh 2>/dev/null
 killall -9 ssh 2>/dev/null
 
-# 3. Clean up legacy files
+# Clean up legacy files
 rm -rf /usr/local/aura-ras/
 rm -f /Library/LaunchDaemons/edu.purdue.pae.aura-ras.*
 rm -rf /var/root/.ssh/aura_ed25519*

@@ -341,6 +341,81 @@ func configureXPCDaemon() {
     }
 }
 
+func registerURLProtocol() {
+    let appPath = "/usr/local/aura-ras/aura-ras-helper.app"
+    let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+    
+    // 1. System-wide App Registration
+    print("Registering auraras:// protocol system-wide...")
+    let lsSystem = Process()
+    lsSystem.executableURL = URL(fileURLWithPath: lsregisterPath)
+    lsSystem.arguments = ["-f", appPath]
+    try? lsSystem.run()
+    lsSystem.waitUntilExit()
+    
+    // 2. User-Specific Registration (For the currently logged-in user)
+    let statProcess = Process()
+    let pipe = Pipe()
+    statProcess.executableURL = URL(fileURLWithPath: "/usr/bin/stat")
+    statProcess.arguments = ["-f", "%Su", "/dev/console"]
+    statProcess.standardOutput = pipe
+    try? statProcess.run()
+    statProcess.waitUntilExit()
+    
+    if let data = try? pipe.fileHandleForReading.readToEnd(),
+       let currentUser = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !currentUser.isEmpty, currentUser != "root" {
+        
+        print("Registering auraras:// protocol for logged-in user: \(currentUser)...")
+        let suProcess = Process()
+        suProcess.executableURL = URL(fileURLWithPath: "/usr/bin/su")
+        suProcess.arguments = ["-", currentUser, "-c", "\(lsregisterPath) -f '\(appPath)'"]
+        try? suProcess.run()
+        suProcess.waitUntilExit()
+    }
+    
+    // 3. Generate LaunchAgent for FUTURE Users
+    let agentPath = "/Library/LaunchAgents/edu.purdue.pae.aura-ras.lsregister.plist"
+    let plistContent = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>edu.purdue.pae.aura-ras.lsregister</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>\(lsregisterPath)</string>
+            <string>-f</string>
+            <string>\(appPath)</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+    </dict>
+    </plist>
+    """
+
+    do {
+        try plistContent.write(toFile: agentPath, atomically: true, encoding: .utf8)
+        
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["644", agentPath]
+        try? chmod.run()
+        chmod.waitUntilExit()
+
+        let chown = Process()
+        chown.executableURL = URL(fileURLWithPath: "/usr/sbin/chown")
+        chown.arguments = ["root:wheel", agentPath]
+        try? chown.run()
+        chown.waitUntilExit()
+        
+        print("LaunchAgent successfully configured for future user logins.")
+    } catch {
+        print("ERROR: Failed to write lsregister LaunchAgent: \(error)")
+    }
+}
+
 // MARK: - Telemetry & Check-in Functions
 
 func getSerialNumber() -> String {
@@ -518,6 +593,7 @@ func uninstallAuraRAS() {
     let tunnelDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.tunnel.plist"
     let helperDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.daemon.plist"
     let checkinDaemonPath = "/Library/LaunchDaemons/edu.purdue.pae.aura-ras.checkin.plist"
+    let lsregisterAgentPath = "/Library/LaunchAgents/edu.purdue.pae.aura-ras.lsregister.plist"
     let installDir = "/usr/local/aura-ras"
     let helperDaemon = "/Library/PrivilegedHelperTools/aura-ras-daemon"
     let prefsPath = "/Library/Preferences/edu.purdue.pae.aura-ras.plist"
@@ -543,6 +619,12 @@ func uninstallAuraRAS() {
         }
     }
     print("Removed LaunchDaemon plists.")
+    
+    // Remove LaunchAgent
+    if fileManager.fileExists(atPath: lsregisterAgentPath) {
+        try? fileManager.removeItem(atPath: lsregisterAgentPath)
+        print("Removed LaunchAgent plist.")
+    }
     
     print("Unregistering Helper App from LaunchServices...")
     let lsregister = Process()
@@ -673,6 +755,9 @@ if registrationSuccess {
     
     // Dynamically build and configure the XPC daemon
     configureXPCDaemon()
+    
+    // Register the URL protocol globally, for the current user, and build the LaunchAgent for future users
+    registerURLProtocol()
     
     // 4. Immediately perform the first check-in to populate telemetry on the dashboard
     // and initialize the repeating background LaunchDaemon
