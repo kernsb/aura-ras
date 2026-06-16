@@ -162,7 +162,7 @@
                                 <td>{{ comp.serial_number|default:"-" }}</td>
                                 <td>{{ comp.last_user|default:"-" }}</td>
                                 <td>{{ comp.primary_user|default:"-" }}</td>
-                                <td>
+                                <td data-order="{{ comp.last_checkin|date:'U' }}">
                                     <!-- Use Django's timezone tag to properly offset based on the user's settings profile -->
                                     {% timezone user.profile.timezone|default:"UTC" %}
                                         {{ comp.last_checkin|date:"M d, Y g:i A" }}
