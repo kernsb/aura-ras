@@ -99,36 +99,23 @@ if [ "$MODE" == "upgrade" ]; then
         exit 1
     fi
 
-    echo -e "${GREEN}[*] Upgrading target directory: ${APP_DIR}${NC}"
+    if [ ! -f "${APP_DIR}/aura_ras_server/local_settings.py" ]; then
+        echo -e "\n${YELLOW}[WARNING] local_settings.py not found!${NC}"
+        echo -e "To support structural updates without overwriting credentials,"
+        echo -e "please move your secrets to ${APP_DIR}/aura_ras_server/local_settings.py"
+        echo -e "before running this upgrade.\n"
+        exit 1
+    fi
 
-    echo -e "${GREEN}[*] Backing up current settings...${NC}"
-    cp ${APP_DIR}/aura_ras_server/settings.py /tmp/auraras_settings.py.bak
+    echo -e "${GREEN}[*] Upgrading target directory: ${APP_DIR}${NC}"
 
     echo -e "${GREEN}[*] Pulling latest codebase from GitHub...${NC}"
     rm -rf /tmp/aura-ras-upgrade
     git clone https://github.com/kernsb/aura-ras.git /tmp/aura-ras-upgrade -q
     
-    # Sync over the new files, excluding the virtual environment and local sqlite/pycache
-    rsync -av --exclude='venv' --exclude='__pycache__' /tmp/aura-ras-upgrade/server/root/var/www/aura-ras/ ${APP_DIR}/ > /dev/null
+    # Sync over the new files, excluding the virtual environment, pycache, AND local_settings.py
+    rsync -av --exclude='venv' --exclude='__pycache__' --exclude='local_settings.py' /tmp/aura-ras-upgrade/server/root/var/www/aura-ras/ ${APP_DIR}/ > /dev/null
 
-    echo -e "${GREEN}[*] Restoring settings...${NC}"
-    mv /tmp/auraras_settings.py.bak ${APP_DIR}/aura_ras_server/settings.py
-    
-    # --- FIX: Suppress Django AutoField Warnings ---
-    if ! grep -q "DEFAULT_AUTO_FIELD" "${APP_DIR}/aura_ras_server/settings.py"; then
-        echo -e "\n# Suppress Django model warnings" >> "${APP_DIR}/aura_ras_server/settings.py"
-        echo "DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'" >> "${APP_DIR}/aura_ras_server/settings.py"
-    fi
-    
-    # --- FIX: Inject the Application Log Directory if missing ---
-    if ! grep -q "APP_LOG_DIR" "${APP_DIR}/aura_ras_server/settings.py"; then
-        echo -e "\n# Application Event Logging Path" >> "${APP_DIR}/aura_ras_server/settings.py"
-        echo "APP_LOG_DIR = '/data/logs/aura-ras'" >> "${APP_DIR}/aura_ras_server/settings.py"
-        mkdir -p /data/logs/aura-ras
-        chown aura-tunnel:${WEB_GROUP} /data/logs/aura-ras
-        chmod 775 /data/logs/aura-ras
-    fi
-    
     # Ensure management command directories exist for the telemetry auditor
     mkdir -p ${APP_DIR}/api/management/commands
     touch ${APP_DIR}/api/management/__init__.py
@@ -333,22 +320,19 @@ if [ "$MODE" == "install" ]; then
     echo -e "${GREEN}[*] Setting up Python Environment...${NC}"
     sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && python3 -m venv venv && source venv/bin/activate && pip install django mysqlclient mozilla-django-oidc cryptography requests -q"
 
-    echo -e "${GREEN}[*] Injecting Secrets into settings.py...${NC}"
-    cat << EOF >> ${APP_DIR}/aura_ras_server/settings.py
+    echo -e "${GREEN}[*] Creating local_settings.py with your credentials...${NC}"
+    cat << EOF > ${APP_DIR}/aura_ras_server/local_settings.py
+# --- AURA RAS LOCAL SECRETS ---
+# This file overrides default settings and is ignored by Git.
 
-# --- AUTOMATED INSTALLER CONFIGURATION ---
 SECRET_KEY = '${DJANGO_SECRET}'
-AURA_API_SECRET = '${AURA_API_SECRET}'
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '${SERVER_NAME}']
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '${SERVER_NAME}']
 APP_LOG_DIR = '${APP_LOG_DIR}'
 
 OIDC_RP_CLIENT_ID = '${OIDC_CLIENT_ID}'
 OIDC_RP_CLIENT_SECRET = '${OIDC_CLIENT_SECRET}'
-OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.microsoftonline.com/${OIDC_TENANT}/oauth2/v2.0/authorize'
-OIDC_OP_TOKEN_ENDPOINT = 'https://login.microsoftonline.com/${OIDC_TENANT}/oauth2/v2.0/token'
-OIDC_OP_USER_ENDPOINT = 'https://graph.microsoft.com/oidc/userinfo'
-OIDC_OP_JWKS_ENDPOINT = 'https://login.microsoftonline.com/${OIDC_TENANT}/discovery/v2.0/keys'
+AURA_API_SECRET = '${AURA_API_SECRET}'
 
 DATABASES = {
     'default': {
@@ -361,6 +345,9 @@ DATABASES = {
     }
 }
 EOF
+
+    chown aura-tunnel:${WEB_GROUP} ${APP_DIR}/aura_ras_server/local_settings.py
+    chmod 640 ${APP_DIR}/aura_ras_server/local_settings.py
 
     echo -e "${GREEN}[*] Initializing Database Schema...${NC}"
     sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && python manage.py makemigrations api && python manage.py migrate"
@@ -513,6 +500,7 @@ EOF
     echo -e "${CYAN}================================================================${NC}"
     echo -e "Dashboard URL:    https://${SERVER_NAME}"
     echo -e "Install Path:     ${APP_DIR}"
+    echo -e "Local Settings:   ${APP_DIR}/aura_ras_server/local_settings.py"
     echo -e "Apache Log Dir:   ${LOG_DIR}"
     echo -e "App Event Logs:   ${APP_LOG_DIR}"
     echo -e "\n${YELLOW}*** SECURE VAULT SUMMARY - SAVE THESE CREDENTIALS ***${NC}"
