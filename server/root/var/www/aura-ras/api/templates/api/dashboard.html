@@ -84,84 +84,150 @@
                         </li>
                     </ul>
                 </div>
+            {% else %}
+                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-outline-light border-0 fw-semibold">
+                    <i class="bi bi-microsoft me-2"></i> Log In
+                </a>
             {% endif %}
         </div>
     </div>
 </nav>
 
 <main class="container" style="margin-top: 100px; margin-bottom: 80px;">
-    <div class="row mb-4">
-        <div class="col">
-            <h1 class="mb-0 h2">Registered Endpoints</h1>
-            <p>Select an endpoint below to initiate a secure connection.</p>
+    {% if user.is_authenticated %}
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="mb-0 h2">Registered Endpoints</h1>
+                <p>Select an endpoint below to initiate a secure connection.</p>
+            </div>
         </div>
-    </div>
 
-    <!-- Data Table -->
-    <div class="card shadow-sm border-0">
-        <div class="card-body p-4">
-            <div class="table-responsive">
-                <table id="endpointsTable" class="table table-hover table-striped mb-0 align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col" class="ps-4">Hostname</th>
-                            <th scope="col">Role</th>
-                            <th scope="col">Serial Number</th>
-                            <th scope="col">Last User</th>
-                            <th scope="col">Primary User</th>
-                            <th scope="col">Last Check-in</th>
-                            <th scope="col" class="text-end pe-4">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for comp in computers %}
-                        <tr>
-                            <td class="ps-4 fw-semibold">
-                                <div class="d-flex align-items-center">
-                                    <!-- Dynamic Status Dot -->
-                                    <span class="p-1 rounded-circle me-2 shadow-sm" style="background-color: {{ comp.status_color }}; width: 12px; height: 12px;" title="{{ comp.status_text }}"></span>
-                                    {{ comp.hostname }}
-                                </div>
-                            </td>
-                            <td>
-                                {% if comp.role == 'Administrator' %}
-                                    <span class="badge badge-admin">Administrator</span>
-                                {% else %}
-                                    <span class="badge badge-endpoint">Endpoint</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ comp.serial_number|default:"-" }}</td>
-                            <td>{{ comp.last_user|default:"-" }}</td>
-                            <td>{{ comp.primary_user|default:"-" }}</td>
-                            
-                            <!-- The invisible 'data-order' passes the raw numeric Unix timestamp to fix the alphabetical sorting! -->
-                            <td data-order="{{ comp.last_checkin|date:'U' }}">
-                                {% timezone user.profile.timezone|default:"UTC" %}
-                                    {{ comp.last_checkin|date:"M d, Y g:i A" }}
-                                {% endtimezone %}
-                            </td>
-                            <td class="text-end pe-4">
-                                <!-- Secure Custom Protocol Action Buttons Triggering the JS Interceptor -->
-                                <button onclick="initiateConnection('{{ comp.id }}', 'Screen Share', 'auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}')" 
-                                        class="btn btn-sm btn-purdue-gold me-2 shadow-sm"
-                                        aria-label="Start Screen Share session with {{ comp.hostname }}">
-                                    Screen Share
-                                </button>
+        <!-- Data Table -->
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <div class="table-responsive">
+                    <table id="endpointsTable" class="table table-hover table-striped mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="ps-4">Hostname</th>
+                                <th scope="col">Role</th>
+                                <th scope="col">Serial Number</th>
+                                <th scope="col">Last User</th>
+                                <th scope="col">Primary User</th>
+                                <th scope="col">Last Check-in</th>
+                                <th scope="col" class="text-end pe-4">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for comp in computers %}
+                            <tr>
+                                <td class="ps-4 fw-semibold">
+                                    <div class="d-flex align-items-center">
+                                        <span class="p-1 rounded-circle me-2 shadow-sm" style="background-color: {{ comp.status_color }}; width: 12px; height: 12px;" title="{{ comp.status_text }}"></span>
+                                        {{ comp.hostname }}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if comp.role == 'Administrator' %}
+                                        <span class="badge badge-admin">Administrator</span>
+                                    {% else %}
+                                        <span class="badge badge-endpoint">Endpoint</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ comp.serial_number|default:"-" }}</td>
+                                <td>{{ comp.last_user|default:"-" }}</td>
+                                <td>{{ comp.primary_user|default:"-" }}</td>
                                 
-                                <button onclick="initiateConnection('{{ comp.id }}', 'Terminal', 'auraras://connect?type=ssh&port={{ comp.ssh_port }}&host={{ comp.hostname }}')" 
-                                        class="btn btn-sm btn-purdue-solid shadow-sm"
-                                        aria-label="Open Terminal connection to {{ comp.hostname }}">
-                                    Terminal
-                                </button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                                <td data-order="{{ comp.last_checkin|date:'U' }}">
+                                    {% timezone user.profile.timezone|default:"UTC" %}
+                                        {{ comp.last_checkin|date:"M d, Y g:i A" }}
+                                    {% endtimezone %}
+                                </td>
+                                <td class="text-end pe-4">
+                                    
+                                    <!-- RESTORED: LAPS Password Retrieval Button -->
+                                    {% if laps_enabled %}
+                                    <button onclick="openLapsModal('{{ comp.id }}', '{{ comp.jssid }}', '{{ comp.hostname }}')" 
+                                            class="btn btn-sm btn-outline-secondary me-2 shadow-sm"
+                                            title="View LAPS Passwords"
+                                            aria-label="View LAPS Passwords for {{ comp.hostname }}">
+                                        <i class="bi bi-key-fill"></i>
+                                    </button>
+                                    {% endif %}
+
+                                    <!-- Secure Custom Protocol Action Buttons -->
+                                    <button onclick="initiateConnection('{{ comp.id }}', 'Screen Share', 'auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}')" 
+                                            class="btn btn-sm btn-purdue-gold me-2 shadow-sm"
+                                            aria-label="Start Screen Share session with {{ comp.hostname }}">
+                                        Screen Share
+                                    </button>
+                                    
+                                    <button onclick="initiateConnection('{{ comp.id }}', 'Terminal', 'auraras://connect?type=ssh&port={{ comp.ssh_port }}&host={{ comp.hostname }}')" 
+                                            class="btn btn-sm btn-purdue-solid shadow-sm"
+                                            aria-label="Open Terminal connection to {{ comp.hostname }}">
+                                        Terminal
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <!-- RESTORED: Unauthenticated User State (Login Hero) -->
+        <div class="row text-center" style="margin-top: 10vh;">
+            <div class="col">
+                <i class="bi bi-shield-lock-fill text-muted" style="font-size: 5rem; opacity: 0.5;"></i>
+                <h1 class="mt-4 fw-bold">Authentication Required</h1>
+                <p class="lead text-muted mb-5">You must sign in with your enterprise credentials to view and manage endpoints.</p>
+                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg px-5 py-3 fw-bold shadow-sm rounded-pill">
+                    <i class="bi bi-microsoft me-2"></i> Log In with Entra ID
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</main>
+
+<!-- RESTORED: LAPS Password Modal -->
+<div class="modal fade" id="lapsModal" tabindex="-1" aria-labelledby="lapsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header border-0 bg-light">
+                <h5 class="modal-title fw-bold" id="lapsModalLabel"><i class="bi bi-key-fill me-2 text-muted"></i>LAPS Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 text-center">
+                <h6 id="lapsHostname" class="fw-bold mb-4"></h6>
+                
+                <div id="lapsLoading" class="spinner-border text-secondary" role="status" style="display: none;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                
+                <div id="lapsContent" style="display: none;">
+                    <div class="mb-3" id="jamfLapsSection" style="display: none;">
+                        <p class="mb-1 text-muted small fw-bold text-uppercase">Jamf Admin (<span id="jamfUsername"></span>)</p>
+                        <div class="input-group mb-3 shadow-sm">
+                            <input type="text" class="form-control text-center font-monospace fs-5" id="jamfPassword" readonly>
+                            <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('jamfPassword')"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="prestageLapsSection" style="display: none;">
+                        <p class="mb-1 text-muted small fw-bold text-uppercase">PreStage Admin (<span id="prestageUsername"></span>)</p>
+                        <div class="input-group shadow-sm">
+                            <input type="text" class="form-control text-center font-monospace fs-5" id="prestagePassword" readonly>
+                            <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('prestagePassword')"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div id="lapsError" class="alert alert-danger mt-3" style="display: none;"></div>
+                </div>
             </div>
         </div>
     </div>
-</main>
+</div>
 
 <footer class="footer py-3 fixed-bottom">
     <div class="container d-flex justify-content-between align-items-center text-light">
@@ -180,33 +246,33 @@
 
 <script>
     $(document).ready(function() {
-        // --- DataTables Initialization ---
-        // Dynamically pull the user's preferred rows per page from Django
-        const userRowsPref = {{ request.user.profile.rows_per_page|default:25 }};
+        // --- DataTables Initialization (Protected so it doesn't crash if logged out) ---
+        if ($('#endpointsTable').length > 0) {
+            const userRowsPref = {{ request.user.profile.rows_per_page|default:25 }};
 
-        $('#endpointsTable').DataTable({
-            "pageLength": userRowsPref, 
-            "lengthMenu": [[10, 25, 50, 100, 500, 1000], [10, 25, 50, 100, 500, 1000]],
-            "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
-                   "<'row'<'col-sm-12'tr>>" +
-                   "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
-            "language": {
-                "search": "<i class='bi bi-search text-muted fs-5'></i>",
-                "searchPlaceholder": "Filter Computers...",
-                "lengthMenu": "Show: _MENU_",
-                "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
-                "infoEmpty": "0 - 0 of 0",
-                "infoFiltered": "(filtered from _MAX_)",
-                "emptyTable": "No endpoints have registered with the server yet."
-            },
-            "order": [[5, "desc"]], // Automatically sort by the 'Last Check-in' column (index 5) descending
-            "columnDefs": [
-                { "orderable": false, "targets": 6 } // Disable sorting on the Actions column (index 6)
-            ]
-        });
+            $('#endpointsTable').DataTable({
+                "pageLength": userRowsPref, 
+                "lengthMenu": [[10, 25, 50, 100, 500, 1000], [10, 25, 50, 100, 500, 1000]],
+                "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
+                       "<'row'<'col-sm-12'tr>>" +
+                       "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
+                "language": {
+                    "search": "<i class='bi bi-search text-muted fs-5'></i>",
+                    "searchPlaceholder": "Filter Computers...",
+                    "lengthMenu": "Show: _MENU_",
+                    "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
+                    "infoEmpty": "0 - 0 of 0",
+                    "infoFiltered": "(filtered from _MAX_)",
+                    "emptyTable": "No endpoints have registered with the server yet."
+                },
+                "order": [[5, "desc"]], 
+                "columnDefs": [
+                    { "orderable": false, "targets": 6 }
+                ]
+            });
+        }
 
         // --- Background Dashboard Auto-Refresh ---
-        // Pull the interval from the user's profile settings (default to 15 mins)
         const refreshMinutes = parseInt("{{ request.user.profile.auto_refresh_interval|default:15 }}", 10) || 15;
         const refreshMs = refreshMinutes * 60 * 1000; 
         
@@ -215,16 +281,95 @@
         }, refreshMs);
     });
 
+    // --- RESTORED: LAPS Password Logic ---
+    function openLapsModal(compId, jssid, hostname) {
+        document.getElementById('lapsHostname').innerText = hostname;
+        document.getElementById('lapsContent').style.display = 'none';
+        document.getElementById('lapsError').style.display = 'none';
+        document.getElementById('jamfLapsSection').style.display = 'none';
+        document.getElementById('prestageLapsSection').style.display = 'none';
+        document.getElementById('lapsLoading').style.display = 'inline-block';
+        
+        new bootstrap.Modal(document.getElementById('lapsModal')).show();
+        
+        fetch(`/api/laps/usernames/${jssid}`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('lapsLoading').style.display = 'none';
+                if (data.status === 'success') {
+                    document.getElementById('lapsContent').style.display = 'block';
+                    let foundAccounts = false;
+                    
+                    if (data.jamf_user) {
+                        foundAccounts = true;
+                        document.getElementById('jamfUsername').innerText = data.jamf_user;
+                        document.getElementById('jamfPassword').value = 'Loading...';
+                        document.getElementById('jamfLapsSection').style.display = 'block';
+                        fetchPassword(jssid, 'jamf', 'jamfPassword');
+                    }
+                    
+                    if (data.prestage_user) {
+                        foundAccounts = true;
+                        document.getElementById('prestageUsername').innerText = data.prestage_user;
+                        document.getElementById('prestagePassword').value = 'Loading...';
+                        document.getElementById('prestageLapsSection').style.display = 'block';
+                        fetchPassword(jssid, 'prestage', 'prestagePassword');
+                    }
+                    
+                    if (!foundAccounts) {
+                        showLapsError("No LAPS accounts are currently configured or detected for this device.");
+                    }
+                } else {
+                    showLapsError(data.message || "Failed to fetch LAPS accounts.");
+                }
+            })
+            .catch(error => {
+                showLapsError("Network error while communicating with the server.");
+            });
+    }
+
+    function fetchPassword(jssid, type, inputId) {
+        fetch(`/api/laps/password/${jssid}/${type}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById(inputId).value = data.password;
+                } else {
+                    document.getElementById(inputId).value = 'Error: ' + (data.message || 'Unknown');
+                }
+            })
+            .catch(error => {
+                document.getElementById(inputId).value = 'Network Error';
+            });
+    }
+
+    function showLapsError(message) {
+        document.getElementById('lapsLoading').style.display = 'none';
+        document.getElementById('lapsContent').style.display = 'block';
+        const errorDiv = document.getElementById('lapsError');
+        errorDiv.innerText = message;
+        errorDiv.style.display = 'block';
+    }
+
+    function copyToClipboard(elementId) {
+        const copyText = document.getElementById(elementId);
+        copyText.select();
+        copyText.setSelectionRange(0, 99999);
+        document.execCommand("copy");
+        
+        // Brief visual feedback
+        const originalBg = copyText.style.backgroundColor;
+        copyText.style.backgroundColor = "#d4edda";
+        setTimeout(() => { copyText.style.backgroundColor = originalBg; }, 400);
+    }
+
     // --- Connection Logging Interceptor ---
     function initiateConnection(computerId, sessionType, customUrlScheme) {
-        // 1. Grab the CSRF token to pass Django's strict security checks
         const csrfToken = document.querySelector('input[name=csrfmiddlewaretoken]')?.value; 
-        
         const formData = new FormData();
         formData.append('computer_id', computerId);
         formData.append('session_type', sessionType);
 
-        // 2. Send the ping to the server to open the DB record and log the "Connect" event
         fetch("{% url 'log_session_event' %}", {
             method: 'POST',
             headers: {
@@ -232,11 +377,9 @@
             },
             body: formData
         }).then(response => {
-            // 3. Regardless of server response, instantly launch the Mac app
             window.location.href = customUrlScheme;
         }).catch(error => {
             console.error("Session logging failed:", error);
-            // Even if the ping fails, don't trap the user. Launch the connection!
             window.location.href = customUrlScheme;
         });
     }
