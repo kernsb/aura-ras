@@ -4,6 +4,7 @@ Django settings for aura_ras_server project.
 
 from pathlib import Path
 import os
+import sys
 
 # Import local settings
 try:
