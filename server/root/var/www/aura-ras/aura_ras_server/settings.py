@@ -12,10 +12,6 @@ try:
 except ImportError:
     pass
 
-# Application logging setup
-LOG_DIR = getattr(sys.modules[__name__], 'APP_LOG_DIR', os.path.join(BASE_DIR, 'logs'))
-os.makedirs(LOG_DIR, exist_ok=True)
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
