@@ -113,14 +113,40 @@ if [ "$MODE" == "upgrade" ]; then
 
     echo -e "${GREEN}[*] Restoring settings...${NC}"
     mv /tmp/auraras_settings.py.bak ${APP_DIR}/aura_ras_server/settings.py
+    
+    # --- FIX: Suppress Django AutoField Warnings ---
+    if ! grep -q "DEFAULT_AUTO_FIELD" "${APP_DIR}/aura_ras_server/settings.py"; then
+        echo -e "\n# Suppress Django model warnings" >> "${APP_DIR}/aura_ras_server/settings.py"
+        echo "DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'" >> "${APP_DIR}/aura_ras_server/settings.py"
+    fi
+    
+    # --- FIX: Inject the Application Log Directory if missing ---
+    if ! grep -q "APP_LOG_DIR" "${APP_DIR}/aura_ras_server/settings.py"; then
+        echo -e "\n# Application Event Logging Path" >> "${APP_DIR}/aura_ras_server/settings.py"
+        echo "APP_LOG_DIR = '/data/logs/aura-ras'" >> "${APP_DIR}/aura_ras_server/settings.py"
+        mkdir -p /data/logs/aura-ras
+        chown aura-tunnel:${WEB_GROUP} /data/logs/aura-ras
+        chmod 775 /data/logs/aura-ras
+    fi
+    
+    # Ensure management command directories exist for the telemetry auditor
+    mkdir -p ${APP_DIR}/api/management/commands
+    touch ${APP_DIR}/api/management/__init__.py
+    touch ${APP_DIR}/api/management/commands/__init__.py
+    
     chown -R aura-tunnel:${WEB_GROUP} ${APP_DIR}
     chmod -R 750 ${APP_DIR}
 
     echo -e "${GREEN}[*] Updating Python Dependencies...${NC}"
     sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && pip install --upgrade django mysqlclient mozilla-django-oidc cryptography requests -q"
 
-    echo -e "${GREEN}[*] Applying Database Migrations...${NC}"
+    echo -e "${GREEN}[*] Applying Database Migrations (Adding ConnectionLogs)...${NC}"
     sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && python manage.py makemigrations api && python manage.py migrate"
+
+    echo -e "${GREEN}[*] Configuring Telemetry Audit Cron Job...${NC}"
+    CRON_FILE="/etc/cron.d/aura-audit"
+    echo "* * * * * aura-tunnel cd ${APP_DIR} && ${APP_DIR}/venv/bin/python manage.py audit_telemetry >> /dev/null 2>&1" > $CRON_FILE
+    chmod 644 $CRON_FILE
 
     echo -e "${GREEN}[*] Restarting Services...${NC}"
     systemctl restart ${WEB_SERVICE}
@@ -147,6 +173,9 @@ if [ "$MODE" == "install" ]; then
 
     read -p "Enter Apache Log Path (Default: $DEF_LOG_DIR): " LOG_DIR
     LOG_DIR=${LOG_DIR:-$DEF_LOG_DIR}
+
+    read -p "Enter Application Event Log Path (Default: /data/logs/aura-ras): " APP_LOG_DIR
+    APP_LOG_DIR=${APP_LOG_DIR:-/data/logs/aura-ras}
 
     # 3. SSL Certificates
     echo -e "\n${YELLOW}[SSL Configuration]${NC}"
@@ -283,13 +312,21 @@ if [ "$MODE" == "install" ]; then
     echo -e "${GREEN}[*] Preparing Custom Directories...${NC}"
     mkdir -p "${APP_DIR}"
     mkdir -p "${LOG_DIR}"
+    mkdir -p "${APP_LOG_DIR}"
     chown root:${WEB_GROUP} "${LOG_DIR}"
     chmod 775 "${LOG_DIR}"
+    chown aura-tunnel:${WEB_GROUP} "${APP_LOG_DIR}"
+    chmod 775 "${APP_LOG_DIR}"
 
     echo -e "${GREEN}[*] Deploying Codebase...${NC}"
     rm -rf /tmp/aura-ras
     git clone https://github.com/kernsb/aura-ras.git /tmp/aura-ras -q
     rsync -a /tmp/aura-ras/server/root/var/www/aura-ras/ ${APP_DIR}/
+    
+    mkdir -p ${APP_DIR}/api/management/commands
+    touch ${APP_DIR}/api/management/__init__.py
+    touch ${APP_DIR}/api/management/commands/__init__.py
+    
     chown -R aura-tunnel:${WEB_GROUP} ${APP_DIR}
     chmod -R 750 ${APP_DIR}
 
@@ -303,6 +340,8 @@ if [ "$MODE" == "install" ]; then
 SECRET_KEY = '${DJANGO_SECRET}'
 AURA_API_SECRET = '${AURA_API_SECRET}'
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '${SERVER_NAME}']
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+APP_LOG_DIR = '${APP_LOG_DIR}'
 
 OIDC_RP_CLIENT_ID = '${OIDC_CLIENT_ID}'
 OIDC_RP_CLIENT_SECRET = '${OIDC_CLIENT_SECRET}'
@@ -325,6 +364,11 @@ EOF
 
     echo -e "${GREEN}[*] Initializing Database Schema...${NC}"
     sudo -u aura-tunnel -H bash -c "cd ${APP_DIR} && source venv/bin/activate && python manage.py makemigrations api && python manage.py migrate"
+
+    echo -e "${GREEN}[*] Configuring Telemetry Audit Cron Job...${NC}"
+    CRON_FILE="/etc/cron.d/aura-audit"
+    echo "* * * * * aura-tunnel cd ${APP_DIR} && ${APP_DIR}/venv/bin/python manage.py audit_telemetry >> /dev/null 2>&1" > $CRON_FILE
+    chmod 644 $CRON_FILE
 
     echo -e "${GREEN}[*] Configuring Reverse Tunnel SSH Daemon...${NC}"
     cp /tmp/aura-ras/server/root/etc/ssh/sshd_config.d/99-aura-ras.conf /etc/ssh/sshd_config.d/
@@ -410,6 +454,12 @@ EOF
             restorecon -Rv "${LOG_DIR}" > /dev/null
         fi
 
+        # Apply specific log context to the custom Application Logs directory
+        if [ "$APP_LOG_DIR" != "/data/logs/aura-ras" ]; then
+            semanage fcontext -a -t httpd_log_t "${APP_LOG_DIR}(/.*)?"
+            restorecon -Rv "${APP_LOG_DIR}" > /dev/null
+        fi
+
         # Authorized keys context
         semanage fcontext -a -t httpd_sys_rw_content_t "/home/aura-tunnel/.ssh(/.*)?"
         restorecon -Rv /home/aura-tunnel/.ssh > /dev/null
@@ -461,9 +511,10 @@ EOF
     echo -e "\n${CYAN}================================================================${NC}"
     echo -e "${GREEN}             AuraRAS Installation Complete!                     ${NC}"
     echo -e "${CYAN}================================================================${NC}"
-    echo -e "Dashboard URL:  https://${SERVER_NAME}"
-    echo -e "Install Path:   ${APP_DIR}"
-    echo -e "Log Directory:  ${LOG_DIR}"
+    echo -e "Dashboard URL:    https://${SERVER_NAME}"
+    echo -e "Install Path:     ${APP_DIR}"
+    echo -e "Apache Log Dir:   ${LOG_DIR}"
+    echo -e "App Event Logs:   ${APP_LOG_DIR}"
     echo -e "\n${YELLOW}*** SECURE VAULT SUMMARY - SAVE THESE CREDENTIALS ***${NC}"
     echo -e "Database User:    auraras_user"
     echo -e "Database Pass:    ${DB_PASS}"

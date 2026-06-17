@@ -14,12 +14,15 @@ from django.views.decorators.http import require_POST
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 
-from .models import Computer, GlobalSettings, UserProfile
+from .models import Computer, GlobalSettings, UserProfile, ConnectionLog
 from .ssh_utils import sync_authorized_keys
 from .jamf_api import JamfAPI
 
 # Initialize the standard Python logger
 logger = logging.getLogger(__name__)
+
+# Fetch our dedicated event logger for flat-file writes
+aura_logger = logging.getLogger('aura_events')
 
 # --- SECURITY DECORATOR ---
 def require_api_secret(view_func):
@@ -72,6 +75,7 @@ def register_agent(request):
         )
         sync_authorized_keys()
 
+        aura_logger.info(f"AGENT REGISTERED | Target: {hostname} (JSSID: {jssid})")
         logger.info(f"Agent successfully registered: {hostname} (JSSID: {jssid})")
         return JsonResponse({
             'status': 'success', 
@@ -103,6 +107,7 @@ def unregister_agent(request):
         
         if deleted_count > 0:
             sync_authorized_keys()
+            aura_logger.info(f"AGENT UNREGISTERED | Target JSSID: {jssid}")
             logger.info(f"Agent successfully unregistered and keys revoked for JSSID: {jssid}")
             return JsonResponse({'status': 'success', 'message': 'Unregistered successfully'}, status=200)
         else:
@@ -153,6 +158,7 @@ def checkin_agent(request):
         logger.error(f"Critical error in checkin_agent: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
+
 # --- WEB DASHBOARD VIEWS ---
 
 @login_required
@@ -180,6 +186,38 @@ def update_user_preferences(request):
         return JsonResponse({'status': 'error', 'message': 'Invalid integer provided.'}, status=400)
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+# --- NEW: Web Session Tracking Endpoint ---
+@login_required
+@require_POST
+def log_session_event(request):
+    """
+    Receives an AJAX ping from the dashboard when an admin clicks Connect.
+    Logs it to the text file and opens a database record for tracking.
+    """
+    computer_id = request.POST.get('computer_id')
+    session_type = request.POST.get('session_type')
+    
+    try:
+        computer = Computer.objects.get(id=computer_id)
+        
+        # Close out any abandoned sessions for this user/computer combo defensively
+        ConnectionLog.objects.filter(
+            computer=computer, admin_user=request.user.username, session_type=session_type, is_active=True
+        ).update(is_active=False, end_time=timezone.now())
+        
+        # Open the new tracking record
+        ConnectionLog.objects.create(
+            computer=computer, admin_user=request.user.username, session_type=session_type
+        )
+        
+        # Write exact connect time to rotating text log
+        aura_logger.info(f"SESSION INITIATED | Admin: {request.user.username} | Type: {session_type} | Target: {computer.hostname} ({computer.serial_number})")
+        return JsonResponse({'status': 'success'})
+    except Computer.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Computer not found'}, status=404)
+
 
 def dashboard(request):
     settings_obj = GlobalSettings.load()
@@ -337,6 +375,12 @@ def server_settings(request):
             timezone = request.POST.get('timezone')
             if timezone:
                 profile.timezone = timezone
+            
+            # Save the new Auto Refresh Interval preference
+            refresh_interval = request.POST.get('auto_refresh_interval')
+            if refresh_interval and refresh_interval.isdigit():
+                profile.auto_refresh_interval = int(refresh_interval)
+                
             profile.save()
 
         if role == 'Server Administrator':
