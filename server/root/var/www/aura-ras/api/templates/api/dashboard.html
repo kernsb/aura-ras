@@ -143,30 +143,36 @@
                                         {{ comp.last_checkin|date:"M d, Y g:i A" }}
                                     {% endtimezone %}
                                 </td>
-                                <td class="pe-4">
-                                    <div class="d-flex flex-wrap justify-content-center justify-content-md-end align-items-center gap-2">
-                                        <!-- RESTORED: LAPS Password Retrieval Button -->
+                                <td class="text-end pe-4 align-middle">
+                                    <div class="d-flex flex-nowrap align-items-center justify-content-md-end justify-content-center gap-2">
+                                        
+                                        <!-- LAPS Password Retrieval Button (Isolated to stay vertically centered) -->
                                         {% if laps_enabled %}
-                                        <button onclick="openLapsModal('{{ comp.id }}', '{{ comp.jssid }}', '{{ comp.hostname }}')" 
-                                                class="btn btn-sm btn-outline-secondary shadow-sm"
-                                                title="View LAPS Passwords"
-                                                aria-label="View LAPS Passwords for {{ comp.hostname }}">
-                                            <i class="bi bi-key-fill"></i>
-                                        </button>
+                                        <div class="flex-shrink-0">
+                                            <button onclick="openLapsModal('{{ comp.id }}', '{{ comp.jssid }}', '{{ comp.hostname|escapejs }}')" 
+                                                    class="btn btn-sm btn-outline-secondary shadow-sm"
+                                                    title="View LAPS Passwords"
+                                                    aria-label="View LAPS Passwords for {{ comp.hostname }}">
+                                                <i class="bi bi-key-fill"></i>
+                                            </button>
+                                        </div>
                                         {% endif %}
 
-                                        <!-- Secure Custom Protocol Action Buttons Triggering the JS Interceptor -->
-                                        <button onclick="initiateConnection('{{ comp.id }}', 'Screen Share', 'auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}')" 
-                                                class="btn btn-sm btn-purdue-gold shadow-sm"
-                                                aria-label="Start Screen Share session with {{ comp.hostname }}">
-                                            Screen Share
-                                        </button>
+                                        <!-- Secure Custom Protocol Action Buttons (Wrapped in their own group to stack cleanly) -->
+                                        <div class="d-flex flex-wrap justify-content-center align-items-center gap-2">
+                                            <button onclick="initiateConnection('{{ comp.id }}', 'Screen Share', 'auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}')" 
+                                                    class="btn btn-sm btn-purdue-gold shadow-sm text-nowrap"
+                                                    aria-label="Start Screen Share session with {{ comp.hostname }}">
+                                                Screen Share
+                                            </button>
+                                            
+                                            <button onclick="initiateConnection('{{ comp.id }}', 'Terminal', 'auraras://connect?type=ssh&port={{ comp.ssh_port }}&host={{ comp.hostname }}')" 
+                                                    class="btn btn-sm btn-purdue-solid shadow-sm text-nowrap"
+                                                    aria-label="Open Terminal connection to {{ comp.hostname }}">
+                                                Terminal
+                                            </button>
+                                        </div>
                                         
-                                        <button onclick="initiateConnection('{{ comp.id }}', 'Terminal', 'auraras://connect?type=ssh&port={{ comp.ssh_port }}&host={{ comp.hostname }}')" 
-                                                class="btn btn-sm btn-purdue-solid shadow-sm"
-                                                aria-label="Open Terminal connection to {{ comp.hostname }}">
-                                            Terminal
-                                        </button>
                                     </div>
                                 </td>
                             </tr>
