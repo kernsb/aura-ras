@@ -140,7 +140,6 @@
                         <thead class="table-light">
                             <tr class="text-nowrap align-middle">
                                 <th scope="col" class="text-center" style="width: 30px;"></th>
-                                <!-- 12px is perfectly centered between ps-2 (8px) and ps-3 (16px) -->
                                 <th scope="col" class="ps-2">Computer Name</th>
                                 <th scope="col">Role</th>
                                 <th scope="col">Serial Number</th>
@@ -156,7 +155,7 @@
                                 <td class="text-center align-middle">
                                     <span class="status-dot status-{{ comp.status_color }}" title="{{ comp.status_text }}" data-bs-toggle="tooltip"></span>
                                 </td>
-                                <td class="fw-semibold" class="ps-2">{{ comp.hostname }}</td>
+                                <td class="ps-2 fw-semibold">{{ comp.hostname }}</td>
                                 <td>
                                     {% if comp.role == 'Administrator' %}
                                         <span class="badge badge-admin">Administrator</span>
