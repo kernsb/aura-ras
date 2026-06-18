@@ -18,17 +18,11 @@ from .models import Computer, GlobalSettings, UserProfile, ConnectionLog
 from .ssh_utils import sync_authorized_keys
 from .jamf_api import JamfAPI
 
-# Initialize the standard Python logger
 logger = logging.getLogger(__name__)
-
-# Fetch our dedicated event logger for flat-file writes
 aura_logger = logging.getLogger('aura_events')
 
 # --- SECURITY DECORATOR ---
 def require_api_secret(view_func):
-    """
-    Decorator to ensure incoming API requests contain the correct Pre-Shared Key.
-    """
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
         expected_secret = getattr(settings, 'AURA_API_SECRET', None)
@@ -38,14 +32,19 @@ def require_api_secret(view_func):
             return JsonResponse({'error': 'Server configuration error'}, status=500)
         
         auth_header = request.headers.get('Authorization', '')
-        # Defensively strip whitespace, though Apache WSGI stripping the header entirely is the main culprit
         if expected_secret and auth_header.strip() != f"Bearer {expected_secret.strip()}":
             client_ip = request.META.get('REMOTE_ADDR', 'Unknown IP')
+            
+            # --- ENTERPRISE AUDIT: Log unauthorized API probes ---
+            aura_logger.warning(f"UNAUTHORIZED API ATTEMPT | Endpoint: {request.path} | Source IP: {client_ip} | Reason: Invalid Bearer Token")
+            # -----------------------------------------------------
+            
             logger.warning(f"Unauthorized API access attempt from {client_ip}. Invalid Bearer token.")
             return JsonResponse({'error': 'Unauthorized'}, status=401)
             
         return view_func(request, *args, **kwargs)
     return _wrapped_view
+
 
 # --- SWIFT AGENT API ENDPOINTS ---
 
@@ -62,21 +61,20 @@ def register_agent(request):
         hostname = data.get('hostname')
 
         if not all([jssid, role, public_key, hostname]):
-            logger.warning("Agent registration failed: Missing required fields in payload.")
             return JsonResponse({'error': 'Missing required fields in payload'}, status=400)
 
         computer, created = Computer.objects.update_or_create(
             jssid=jssid,
-            defaults={
-                'role': role,
-                'public_key': public_key,
-                'hostname': hostname
-            }
+            defaults={'role': role, 'public_key': public_key, 'hostname': hostname}
         )
         sync_authorized_keys()
 
-        aura_logger.info(f"AGENT REGISTERED | Target: {hostname} (JSSID: {jssid})")
-        logger.info(f"Agent successfully registered: {hostname} (JSSID: {jssid})")
+        # --- ENTERPRISE AUDIT: Track new enrollments vs key rotations ---
+        if created:
+            aura_logger.info(f"AGENT REGISTERED (NEW) | Target: {hostname} (JSSID: {jssid})")
+        else:
+            aura_logger.info(f"AGENT KEY ROTATED (UPDATE) | Target: {hostname} (JSSID: {jssid})")
+            
         return JsonResponse({
             'status': 'success', 
             'message': 'Registered successfully with AuraRAS',
@@ -86,10 +84,8 @@ def register_agent(request):
         }, status=200)
 
     except json.JSONDecodeError:
-        logger.warning(f"Invalid JSON format received at register_agent from {request.META.get('REMOTE_ADDR')}")
         return JsonResponse({'error': 'Invalid JSON format'}, status=400)
     except Exception as e:
-        logger.error(f"Critical error in register_agent: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
@@ -108,17 +104,11 @@ def unregister_agent(request):
         if deleted_count > 0:
             sync_authorized_keys()
             aura_logger.info(f"AGENT UNREGISTERED | Target JSSID: {jssid}")
-            logger.info(f"Agent successfully unregistered and keys revoked for JSSID: {jssid}")
             return JsonResponse({'status': 'success', 'message': 'Unregistered successfully'}, status=200)
         else:
-            logger.warning(f"Unregister attempt failed: Endpoint JSSID {jssid} not found.")
             return JsonResponse({'status': 'not_found', 'message': 'Endpoint not found'}, status=404)
 
-    except json.JSONDecodeError:
-        logger.warning(f"Invalid JSON format received at unregister_agent from {request.META.get('REMOTE_ADDR')}")
-        return JsonResponse({'error': 'Invalid JSON format'}, status=400)
     except Exception as e:
-        logger.error(f"Critical error in unregister_agent: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
@@ -134,7 +124,6 @@ def checkin_agent(request):
 
         computer = Computer.objects.filter(jssid=jssid).first()
         if not computer:
-            logger.warning(f"Check-in rejected: Computer with JSSID {jssid} not found. Needs registration.")
             return JsonResponse({'error': 'Computer not found. Please register first.'}, status=404)
 
         if 'hostname' in data: computer.hostname = data['hostname']
@@ -151,11 +140,7 @@ def checkin_agent(request):
             'checkin_interval_minutes': settings_obj.agent_checkin_interval_minutes
         }, status=200)
 
-    except json.JSONDecodeError:
-        logger.warning(f"Invalid JSON format received at checkin_agent from {request.META.get('REMOTE_ADDR')}")
-        return JsonResponse({'error': 'Invalid JSON format'}, status=400)
     except Exception as e:
-        logger.error(f"Critical error in checkin_agent: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -164,55 +149,37 @@ def checkin_agent(request):
 @login_required
 @require_POST
 def update_user_preferences(request):
-    """
-    Silently handles background AJAX requests to save UI preferences 
-    to the user's database profile.
-    """
     try:
         data = json.loads(request.body)
-        
         profile, created = UserProfile.objects.get_or_create(user=request.user)
         
         if 'rows_per_page' in data:
             profile.rows_per_page = int(data['rows_per_page'])
-        
         if 'auto_refresh_interval' in data:
             profile.auto_refresh_interval = int(data['auto_refresh_interval'])
             
         profile.save()
         return JsonResponse({'status': 'success'})
-        
-    except ValueError:
-        return JsonResponse({'status': 'error', 'message': 'Invalid integer provided.'}, status=400)
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
-
-# --- NEW: Web Session Tracking Endpoint ---
 @login_required
 @require_POST
 def log_session_event(request):
-    """
-    Receives an AJAX ping from the dashboard when an admin clicks Connect.
-    Logs it to the text file and opens a database record for tracking.
-    """
     computer_id = request.POST.get('computer_id')
     session_type = request.POST.get('session_type')
     
     try:
         computer = Computer.objects.get(id=computer_id)
         
-        # Close out any abandoned sessions for this user/computer combo defensively
         ConnectionLog.objects.filter(
             computer=computer, admin_user=request.user.username, session_type=session_type, is_active=True
         ).update(is_active=False, end_time=timezone.now())
         
-        # Open the new tracking record
         ConnectionLog.objects.create(
             computer=computer, admin_user=request.user.username, session_type=session_type
         )
         
-        # Write exact connect time to rotating text log
         aura_logger.info(f"SESSION INITIATED | Admin: {request.user.username} | Type: {session_type} | Target: {computer.hostname} ({computer.serial_number})")
         return JsonResponse({'status': 'success'})
     except Computer.DoesNotExist:
@@ -237,12 +204,10 @@ def dashboard(request):
         active_connections = ""
         try:
             active_connections = subprocess.check_output(['ss', '-tna']).decode('utf-8')
-        except Exception as e:
-            logger.error(f"Failed to run 'ss -tna' command for port polling: {str(e)}")
+        except Exception:
             pass
 
         now = timezone.now()
-        
         try:
             interval_minutes = int(settings_obj.agent_checkin_interval_minutes)
         except (ValueError, TypeError):
@@ -252,30 +217,24 @@ def dashboard(request):
         
         for comp in computers:
             time_since_checkin = now - comp.last_checkin if comp.last_checkin else timedelta(days=999)
-            seconds_since = time_since_checkin.total_seconds()
-            
-            if seconds_since < 0:
-                seconds_since = abs(seconds_since)
+            seconds_since = abs(time_since_checkin.total_seconds())
             
             if seconds_since > 86400:
-                comp.status_color = 'red'
+                comp.status_color = 'danger'
                 comp.status_text = 'Offline (Unreachable for > 24 hours)'
-                
             elif seconds_since > grace_period_seconds:
-                comp.status_color = 'yellow'
+                comp.status_color = 'warning'
                 comp.status_text = 'Offline / Sleeping (Missed recent check-in)'
-                
             else:
                 is_listening = False
                 is_active = False
                 
-                # IPv4-Only check for the SSH tunnel socket
                 try:
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                         s.settimeout(0.05)
                         s.connect(('127.0.0.1', comp.ssh_port))
                         is_listening = True
-                except (socket.timeout, ConnectionRefusedError, OSError):
+                except OSError:
                     pass
                 
                 if is_listening:
@@ -291,8 +250,7 @@ def dashboard(request):
                                 
                                 if local_addr.endswith(ssh_suffix) or local_addr.endswith(vnc_suffix):
                                     try:
-                                        peer_port_str = peer_addr.rsplit(':', 1)[-1]
-                                        peer_port = int(peer_port_str)
+                                        peer_port = int(peer_addr.rsplit(':', 1)[-1])
                                         if peer_port >= 32768:
                                             is_active = True
                                             break
@@ -300,15 +258,14 @@ def dashboard(request):
                                         pass
                             
                     if is_active:
-                        comp.status_color = 'blue'
+                        comp.status_color = 'primary'
                         comp.status_text = 'Active Session Established'
                     else:
-                        comp.status_color = 'green'
+                        comp.status_color = 'success'
                         comp.status_text = 'Online & Tunnel Ready'
                 else:
-                    comp.status_color = 'yellow'
+                    comp.status_color = 'warning'
                     comp.status_text = 'Tunnel Disconnected (Network Interruption)'
-
     else:
         computers = []
         role = None
@@ -343,8 +300,13 @@ def computer_assignments(request):
             comp = Computer.objects.filter(id=comp_id).first()
             if comp:
                 comp.assigned_users.set(selected_user_ids)
-                logger.info(f"User '{request.user.username}' updated assignments for computer '{comp.hostname}'.")
-        
+                
+                # --- ENTERPRISE AUDIT: Log access control modifications ---
+                assigned_usernames = [u.username for u in comp.assigned_users.all()]
+                assigned_str = ', '.join(assigned_usernames) if assigned_usernames else 'None'
+                aura_logger.info(f"ACCESS DELEGATED | Admin: {request.user.username} | Target: {comp.hostname} | Assigned Customers: [{assigned_str}]")
+                # ----------------------------------------------------------
+                
         return redirect('computer_assignments')
         
     return render(request, 'api/assignments.html', {
@@ -376,11 +338,9 @@ def server_settings(request):
             if timezone:
                 profile.timezone = timezone
             
-            # Save the new Auto Refresh Interval preference
             refresh_interval = request.POST.get('auto_refresh_interval')
             if refresh_interval and refresh_interval.isdigit():
                 profile.auto_refresh_interval = int(refresh_interval)
-                
             profile.save()
 
         if role == 'Server Administrator':
@@ -408,7 +368,10 @@ def server_settings(request):
                 settings_obj.custom_server_port = 9922
                 
             settings_obj.save()
-            logger.info(f"Global server settings updated by {request.user.username}.")
+            
+            # --- ENTERPRISE AUDIT: Log global configuration tampering ---
+            aura_logger.warning(f"SECURITY SETTINGS CHANGED | Admin: {request.user.username} | Action: Modified Global Server Configuration")
+            # ------------------------------------------------------------
             
         success = True
         
@@ -457,7 +420,6 @@ def laps_usernames(request, jssid):
             'prestage_user': prestage_user
         })
     except Exception as e:
-        logger.error(f"Error fetching LAPS usernames for JSSID {jssid}: {str(e)}", exc_info=True)
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 def laps_password(request, jssid, account_type):
@@ -465,7 +427,6 @@ def laps_password(request, jssid, account_type):
         return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
         
     if request.user.profile.role not in ['Server Administrator', 'Desktop Administrator']:
-        logger.warning(f"User {request.user.username} attempted to view LAPS password without sufficient privileges.")
         return JsonResponse({'status': 'error', 'message': 'Access Denied'}, status=403)
         
     settings_obj = GlobalSettings.load()
@@ -474,9 +435,8 @@ def laps_password(request, jssid, account_type):
         
     try:
         api = JamfAPI(settings_obj.jamf_url, settings_obj.jamf_client_id, settings_obj.jamf_client_secret)
-        logger.info(f"User {request.user.username} requested LAPS password for JSSID {jssid} (Account Type: {account_type})")
         
-        # --- NEW: Log LAPS request to aura_events.log ---
+        # --- ENTERPRISE AUDIT: Log LAPS request ---
         try:
             comp = Computer.objects.get(jssid=jssid)
             target_str = f"{comp.hostname} ({comp.serial_number or 'Unknown'})"
@@ -485,8 +445,8 @@ def laps_password(request, jssid, account_type):
             
         display_type = "Jamf Admin" if account_type == 'jamf' else "PreStage Admin"
         aura_logger.info(f"LAPS REQUESTED | Admin: {request.user.username} | Type: {display_type} | Target: {target_str}")
-        # ------------------------------------------------
-
+        # ------------------------------------------
+        
         if account_type == 'jamf':
             mgmt_id = api.get_management_id(jssid)
             accounts = api.get_laps_accounts(mgmt_id)
@@ -516,5 +476,4 @@ def laps_password(request, jssid, account_type):
             return JsonResponse({'status': 'error', 'message': 'Invalid account type specified.'}, status=400)
             
     except Exception as e:
-        logger.error(f"Error fetching LAPS password for JSSID {jssid}: {str(e)}", exc_info=True)
         return JsonResponse({'status': 'error', 'message': f"Jamf API Error: {str(e)}"}, status=500)

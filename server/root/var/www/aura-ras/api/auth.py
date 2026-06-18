@@ -1,5 +1,11 @@
+import logging
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+from django.contrib.auth.signals import user_logged_in, user_logged_out
+from django.dispatch import receiver
 from api.models import UserProfile
+
+# Fetch our dedicated event logger
+aura_logger = logging.getLogger('aura_events')
 
 class EntraIDOIDCAuthenticationBackend(OIDCAuthenticationBackend):
     def get_userinfo(self, access_token, id_token, payload):
@@ -17,7 +23,7 @@ class EntraIDOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         if not email:
             return self.UserModel.objects.none()
         try:
-            # Look up by 'email' since we are about to change the 'username' to the short name
+            # Look up by 'email' since the 'username' is now just the short name
             return self.UserModel.objects.filter(email__iexact=email)
         except self.UserModel.DoesNotExist:
             return self.UserModel.objects.none()
@@ -75,3 +81,19 @@ class EntraIDOIDCAuthenticationBackend(OIDCAuthenticationBackend):
             
         user.save()
         profile.save()
+
+# ==============================================================================
+# --- ENTERPRISE AUDIT LOGGING SIGNALS ---
+# ==============================================================================
+
+@receiver(user_logged_in)
+def log_user_login(sender, request, user, **kwargs):
+    ip = request.META.get('REMOTE_ADDR', 'Unknown IP')
+    role = getattr(user.profile, 'role', 'Unknown') if hasattr(user, 'profile') else 'Unknown'
+    aura_logger.info(f"ADMIN LOGIN | Admin: {user.username} | Role: {role} | Source IP: {ip}")
+
+@receiver(user_logged_out)
+def log_user_logout(sender, request, user, **kwargs):
+    ip = request.META.get('REMOTE_ADDR', 'Unknown IP')
+    username = user.username if user else 'Unknown'
+    aura_logger.info(f"ADMIN LOGOUT | Admin: {username} | Source IP: {ip}")
