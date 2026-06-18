@@ -142,7 +142,7 @@
                             <tr class="text-nowrap align-middle">
                                 <!-- Status Column (Label Hidden) -->
                                 <th scope="col" class="text-center" style="width: 30px;"></th>
-                                <th scope="col" class="ps-2">Computer Name</th>
+                                <th scope="col" class="ps-3">Computer Name</th>
                                 <th scope="col">Role</th>
                                 <th scope="col">Serial Number</th>
                                 <th scope="col">Last User</th>
@@ -157,12 +157,7 @@
                                 <td class="text-center align-middle">
                                     <span class="status-dot status-{{ comp.status_color }}" title="{{ comp.status_text }}" data-bs-toggle="tooltip"></span>
                                 </td>
-                                <td class="ps-2 fw-semibold">
-                                    <div class="d-flex align-items-center">
-                                        <span class="status-dot status-{{ comp.status_color }} me-3" title="{{ comp.status_text }}" data-bs-toggle="tooltip"></span>
-                                        {{ comp.hostname }}
-                                    </div>
-                                </td>
+                                <td class="ps-3 fw-semibold">{{ comp.hostname }}</td>
                                 <td>
                                     {% if comp.role == 'Administrator' %}
                                         <span class="badge badge-admin">Administrator</span>
