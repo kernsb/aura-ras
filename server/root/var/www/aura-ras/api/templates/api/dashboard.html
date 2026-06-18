@@ -84,10 +84,6 @@
                         </li>
                     </ul>
                 </div>
-            {% else %}
-                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-outline-light border-0 fw-semibold">
-                    <i class="bi bi-microsoft me-2"></i> Log In
-                </a>
             {% endif %}
         </div>
     </div>
@@ -123,7 +119,8 @@
                             <tr>
                                 <td class="ps-4 fw-semibold">
                                     <div class="d-flex align-items-center">
-                                        <span class="p-1 rounded-circle me-2 shadow-sm" style="background-color: {{ comp.status_color }}; width: 12px; height: 12px;" title="{{ comp.status_text }}"></span>
+                                        <!-- Dynamic Status Dot using Bootstrap bg-* classes -->
+                                        <span class="p-1 rounded-circle me-2 shadow-sm bg-{{ comp.status_color }} d-inline-block" style="width: 12px; height: 12px;" title="{{ comp.status_text }}"></span>
                                         {{ comp.hostname }}
                                     </div>
                                 </td>
@@ -138,6 +135,7 @@
                                 <td>{{ comp.last_user|default:"-" }}</td>
                                 <td>{{ comp.primary_user|default:"-" }}</td>
                                 
+                                <!-- The invisible 'data-order' passes the raw numeric Unix timestamp to fix the alphabetical sorting! -->
                                 <td data-order="{{ comp.last_checkin|date:'U' }}">
                                     {% timezone user.profile.timezone|default:"UTC" %}
                                         {{ comp.last_checkin|date:"M d, Y g:i A" }}
@@ -145,7 +143,7 @@
                                 </td>
                                 <td class="text-end pe-4">
                                     
-                                    <!-- RESTORED: LAPS Password Retrieval Button -->
+                                    <!-- LAPS Password Retrieval Button -->
                                     {% if laps_enabled %}
                                     <button onclick="openLapsModal('{{ comp.id }}', '{{ comp.jssid }}', '{{ comp.hostname }}')" 
                                             class="btn btn-sm btn-outline-secondary me-2 shadow-sm"
@@ -155,7 +153,7 @@
                                     </button>
                                     {% endif %}
 
-                                    <!-- Secure Custom Protocol Action Buttons -->
+                                    <!-- Secure Custom Protocol Action Buttons Triggering the JS Interceptor -->
                                     <button onclick="initiateConnection('{{ comp.id }}', 'Screen Share', 'auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}')" 
                                             class="btn btn-sm btn-purdue-gold me-2 shadow-sm"
                                             aria-label="Start Screen Share session with {{ comp.hostname }}">
@@ -176,27 +174,35 @@
             </div>
         </div>
     {% else %}
-        <!-- RESTORED: Unauthenticated User State (Login Hero) -->
-        <div class="row text-center" style="margin-top: 10vh;">
-            <div class="col">
-                <i class="bi bi-shield-lock-fill text-muted" style="font-size: 5rem; opacity: 0.5;"></i>
-                <h1 class="mt-4 fw-bold">Authentication Required</h1>
-                <p class="lead text-muted mb-5">You must sign in with your enterprise credentials to view and manage endpoints.</p>
-                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg px-5 py-3 fw-bold shadow-sm rounded-pill">
-                    <i class="bi bi-microsoft me-2"></i> Log In with Entra ID
-                </a>
+        <!-- RESTORED: Unauthenticated User State (Centered Login Card) -->
+        <div class="row justify-content-center align-items-center" style="min-height: 60vh;">
+            <div class="col-md-6 col-lg-5">
+                <div class="card shadow-lg border-0 rounded-4">
+                    <div class="card-body p-5 text-center">
+                        <div class="mb-4">
+                            <i class="bi bi-shield-lock-fill text-muted" style="font-size: 4rem; opacity: 0.5;"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">Authentication Required</h2>
+                        <p class="text-muted mb-5">Please sign in with your enterprise credentials to access the AuraRAS management portal.</p>
+                        <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg w-100 fw-bold shadow-sm rounded-3">
+                            <i class="bi bi-microsoft me-2"></i> Log In with Entra ID
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     {% endif %}
 </main>
 
-<!-- RESTORED: LAPS Password Modal -->
+<!-- RESTORED: Styled LAPS Password Modal -->
 <div class="modal fade" id="lapsModal" tabindex="-1" aria-labelledby="lapsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content shadow-lg border-0">
-            <div class="modal-header border-0 bg-light">
-                <h5 class="modal-title fw-bold" id="lapsModalLabel"><i class="bi bi-key-fill me-2 text-muted"></i>LAPS Password</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-header border-0" style="background-color: var(--purdue-steel);">
+                <h5 class="modal-title fw-bold text-white" id="lapsModalLabel">
+                    <i class="bi bi-key-fill text-white-50 me-2"></i> LAPS Password
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4 text-center">
                 <h6 id="lapsHostname" class="fw-bold mb-4"></h6>
@@ -246,33 +252,33 @@
 
 <script>
     $(document).ready(function() {
-        // --- DataTables Initialization (Protected so it doesn't crash if logged out) ---
-        if ($('#endpointsTable').length > 0) {
-            const userRowsPref = {{ request.user.profile.rows_per_page|default:25 }};
+        // --- DataTables Initialization ---
+        // Dynamically pull the user's preferred rows per page from Django
+        const userRowsPref = {{ request.user.profile.rows_per_page|default:25 }};
 
-            $('#endpointsTable').DataTable({
-                "pageLength": userRowsPref, 
-                "lengthMenu": [[10, 25, 50, 100, 500, 1000], [10, 25, 50, 100, 500, 1000]],
-                "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
-                       "<'row'<'col-sm-12'tr>>" +
-                       "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
-                "language": {
-                    "search": "<i class='bi bi-search text-muted fs-5'></i>",
-                    "searchPlaceholder": "Filter Computers...",
-                    "lengthMenu": "Show: _MENU_",
-                    "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
-                    "infoEmpty": "0 - 0 of 0",
-                    "infoFiltered": "(filtered from _MAX_)",
-                    "emptyTable": "No endpoints have registered with the server yet."
-                },
-                "order": [[5, "desc"]], 
-                "columnDefs": [
-                    { "orderable": false, "targets": 6 }
-                ]
-            });
-        }
+        $('#endpointsTable').DataTable({
+            "pageLength": userRowsPref, 
+            "lengthMenu": [[10, 25, 50, 100, 500, 1000], [10, 25, 50, 100, 500, 1000]],
+            "dom": "<'row mb-3'<'col-sm-12 col-md-6 d-flex align-items-center'f><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'i>>" +
+                   "<'row'<'col-sm-12'tr>>" +
+                   "<'row mt-3'<'col-sm-12 col-md-6 d-flex align-items-center'l><'col-sm-12 col-md-6 d-flex align-items-center justify-content-md-end justify-content-center mt-2 mt-md-0'p>>",
+            "language": {
+                "search": "<i class='bi bi-search text-muted fs-5'></i>",
+                "searchPlaceholder": "Filter Computers...",
+                "lengthMenu": "Show: _MENU_",
+                "info": "_START_ &nbsp;-&nbsp; _END_ &nbsp;of&nbsp; _TOTAL_",
+                "infoEmpty": "0 - 0 of 0",
+                "infoFiltered": "(filtered from _MAX_)",
+                "emptyTable": "No endpoints have registered with the server yet."
+            },
+            "order": [[5, "desc"]], // Automatically sort by the 'Last Check-in' column (index 5) descending
+            "columnDefs": [
+                { "orderable": false, "targets": 6 } // Disable sorting on the Actions column (index 6)
+            ]
+        });
 
         // --- Background Dashboard Auto-Refresh ---
+        // Pull the interval from the user's profile settings (default to 15 mins)
         const refreshMinutes = parseInt("{{ request.user.profile.auto_refresh_interval|default:15 }}", 10) || 15;
         const refreshMs = refreshMinutes * 60 * 1000; 
         
@@ -281,7 +287,7 @@
         }, refreshMs);
     });
 
-    // --- RESTORED: LAPS Password Logic ---
+    // --- LAPS Password Logic ---
     function openLapsModal(compId, jssid, hostname) {
         document.getElementById('lapsHostname').innerText = hostname;
         document.getElementById('lapsContent').style.display = 'none';
@@ -365,11 +371,14 @@
 
     // --- Connection Logging Interceptor ---
     function initiateConnection(computerId, sessionType, customUrlScheme) {
+        // 1. Grab the CSRF token to pass Django's strict security checks
         const csrfToken = document.querySelector('input[name=csrfmiddlewaretoken]')?.value; 
+        
         const formData = new FormData();
         formData.append('computer_id', computerId);
         formData.append('session_type', sessionType);
 
+        // 2. Send the ping to the server to open the DB record and log the "Connect" event
         fetch("{% url 'log_session_event' %}", {
             method: 'POST',
             headers: {
@@ -377,9 +386,11 @@
             },
             body: formData
         }).then(response => {
+            // 3. Regardless of server response, instantly launch the Mac app
             window.location.href = customUrlScheme;
         }).catch(error => {
             console.error("Session logging failed:", error);
+            // Even if the ping fails, don't trap the user. Launch the connection!
             window.location.href = customUrlScheme;
         });
     }

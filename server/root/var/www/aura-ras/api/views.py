@@ -258,11 +258,11 @@ def dashboard(request):
                 seconds_since = abs(seconds_since)
             
             if seconds_since > 86400:
-                comp.status_color = 'red'
+                comp.status_color = 'danger'
                 comp.status_text = 'Offline (Unreachable for > 24 hours)'
                 
             elif seconds_since > grace_period_seconds:
-                comp.status_color = 'yellow'
+                comp.status_color = 'warning'
                 comp.status_text = 'Offline / Sleeping (Missed recent check-in)'
                 
             else:
@@ -300,13 +300,13 @@ def dashboard(request):
                                         pass
                             
                     if is_active:
-                        comp.status_color = 'blue'
+                        comp.status_color = 'primary'
                         comp.status_text = 'Active Session Established'
                     else:
-                        comp.status_color = 'green'
+                        comp.status_color = 'success'
                         comp.status_text = 'Online & Tunnel Ready'
                 else:
-                    comp.status_color = 'yellow'
+                    comp.status_color = 'warning'
                     comp.status_text = 'Tunnel Disconnected (Network Interruption)'
 
     else:
