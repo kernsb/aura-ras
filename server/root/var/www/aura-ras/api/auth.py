@@ -67,10 +67,6 @@ class EntraIDOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         entra_roles = claims.get('roles', [])
         profile, _ = UserProfile.objects.get_or_create(user=user)
 
-        # --- DEBUG LOGGING ---
-        # Log exactly what Entra ID is sending so we can troubleshoot mismatched strings
-        aura_logger.info(f"OIDC CLAIMS DEBUG | User: {user.username} | Received Roles from Entra: {entra_roles}")
-
         # Map the explicit Entra ID role values to our Django database roles
         if 'ServerAdmin' in entra_roles:
             profile.role = 'Server Administrator'
