@@ -4,7 +4,6 @@ Django settings for aura_ras_server project.
 
 from pathlib import Path
 import os
-import sys
 
 # Import local settings
 try:
@@ -14,10 +13,6 @@ except ImportError:
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Application logging setup
-LOG_DIR = getattr(sys.modules[__name__], 'APP_LOG_DIR', os.path.join(BASE_DIR, 'logs'))
-os.makedirs(LOG_DIR, exist_ok=True)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -50,7 +45,7 @@ MIDDLEWARE = [
 
 # Authentication Backends (Crucial for Entra ID integration)
 AUTHENTICATION_BACKENDS = (
-    'mozilla_django_oidc.auth.OIDCAuthenticationBackend',
+    'api.auth.EntraIDOIDCAuthenticationBackend',
     'django.contrib.auth.backends.ModelBackend',
 )
 

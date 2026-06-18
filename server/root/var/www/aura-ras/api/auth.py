@@ -15,50 +15,61 @@ class EntraIDOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         initial ID token payload.
         """
         user_info = super().get_userinfo(access_token, id_token, payload)
+        
+        # Carry over all potential claims that might hold the username
         user_info['roles'] = payload.get('roles', [])
+        user_info['upn'] = payload.get('upn')
+        user_info['unique_name'] = payload.get('unique_name')
+        user_info['preferred_username'] = payload.get('preferred_username')
         return user_info
 
+    def _get_email(self, claims):
+        # Entra ID is notoriously inconsistent. We check every possible username field.
+        return claims.get('upn') or claims.get('unique_name') or claims.get('preferred_username') or claims.get('email') or ''
+
     def filter_users_by_claims(self, claims):
-        email = claims.get('preferred_username') or claims.get('email')
+        email = self._get_email(claims)
         if not email:
             return self.UserModel.objects.none()
         try:
-            # Look up by 'email' since the 'username' is now just the short name
             return self.UserModel.objects.filter(email__iexact=email)
         except self.UserModel.DoesNotExist:
             return self.UserModel.objects.none()
 
     def create_user(self, claims):
         user = super(EntraIDOIDCAuthenticationBackend, self).create_user(claims)
-        email = claims.get('preferred_username') or claims.get('email')
+        email = self._get_email(claims)
         
         user.first_name = claims.get('given_name', '')
         user.last_name = claims.get('family_name', '')
         user.email = email
-        # Extract the short name (everything before the @)
-        user.username = email.split('@')[0] if email else ''
-        user.save()
         
+        if email:
+            user.username = email.split('@')[0]
+            
+        user.save()
         self._update_user_role(user, claims)
         return user
 
     def update_user(self, user, claims):
-        # Update existing users so their username becomes the short name
-        email = claims.get('preferred_username') or claims.get('email')
+        email = self._get_email(claims)
         if email:
             short_name = email.split('@')[0]
             if user.username != short_name:
                 user.username = short_name
+                user.email = email
                 user.save()
 
-        # This ensures roles are updated on every login if changed in Entra ID!
         self._update_user_role(user, claims)
         return user
 
     def _update_user_role(self, user, claims):
-        # Entra ID passes assigned roles in a 'roles' array list
         entra_roles = claims.get('roles', [])
         profile, _ = UserProfile.objects.get_or_create(user=user)
+
+        # --- DEBUG LOGGING ---
+        # Log exactly what Entra ID is sending so we can troubleshoot mismatched strings
+        aura_logger.info(f"OIDC CLAIMS DEBUG | User: {user.username} | Received Roles from Entra: {entra_roles}")
 
         # Map the explicit Entra ID role values to our Django database roles
         if 'ServerAdmin' in entra_roles:
@@ -74,12 +85,13 @@ class EntraIDOIDCAuthenticationBackend(OIDCAuthenticationBackend):
             user.is_staff = False
             user.is_superuser = False
         else:
-            # Safe fallback: If they log in but have no roles assigned in Entra ID
-            profile.role = 'Unassigned'
+            profile.role = 'Customer' # Safe fallback
             user.is_staff = False
             user.is_superuser = False
             
         user.save()
+        
+        # Explicitly save the profile to lock in the mapped role
         profile.save()
 
 # ==============================================================================
