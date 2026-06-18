@@ -19,7 +19,7 @@
         [data-bs-theme="light"] .jamf-icon-dark { display: none !important; }
         [data-bs-theme="dark"] .jamf-icon-light { display: none !important; }
 
-        /* Stoplight Status Indicators (Restored from 0.1.7) */
+        /* Stoplight Status Indicators */
         .status-dot {
             height: 12px;
             width: 12px;
@@ -132,7 +132,6 @@
             </div>
         </div>
 
-        <!-- Data Table -->
         <div class="card shadow-sm border-0">
             <div class="card-body p-4">
                 <div class="table-responsive">
@@ -140,9 +139,9 @@
                         <caption class="visually-hidden">List of registered AuraRAS endpoints with connection actions</caption>
                         <thead class="table-light">
                             <tr class="text-nowrap align-middle">
-                                <!-- Status Column (Label Hidden) -->
                                 <th scope="col" class="text-center" style="width: 30px;"></th>
-                                <th scope="col" class="ps-3">Computer Name</th>
+                                <!-- 12px is perfectly centered between ps-2 (8px) and ps-3 (16px) -->
+                                <th scope="col" style="padding-left: 12px;">Computer Name</th>
                                 <th scope="col">Role</th>
                                 <th scope="col">Serial Number</th>
                                 <th scope="col">Last User</th>
@@ -157,7 +156,7 @@
                                 <td class="text-center align-middle">
                                     <span class="status-dot status-{{ comp.status_color }}" title="{{ comp.status_text }}" data-bs-toggle="tooltip"></span>
                                 </td>
-                                <td class="ps-3 fw-semibold">{{ comp.hostname }}</td>
+                                <td class="fw-semibold" style="padding-left: 12px;">{{ comp.hostname }}</td>
                                 <td>
                                     {% if comp.role == 'Administrator' %}
                                         <span class="badge badge-admin">Administrator</span>
@@ -169,7 +168,6 @@
                                 <td>{{ comp.last_user|default:"-" }}</td>
                                 <td>{{ comp.primary_user|default:"-" }}</td>
                                 
-                                <!-- The invisible 'data-order' passes the raw numeric Unix timestamp to fix the alphabetical sorting! -->
                                 <td data-order="{{ comp.last_checkin|date:'U' }}">
                                     {% timezone user.profile.timezone|default:"UTC" %}
                                         {{ comp.last_checkin|date:"M d, Y g:i A" }}
@@ -178,7 +176,6 @@
                                 <td class="text-end pe-4 align-middle">
                                     <div class="d-flex flex-nowrap align-items-center justify-content-md-end justify-content-center gap-2">
                                         
-                                        <!-- LAPS Password Retrieval Button (Isolated to stay vertically centered) -->
                                         {% if laps_enabled %}
                                         <div class="flex-shrink-0">
                                             <button onclick="openLapsModal('{{ comp.id }}', '{{ comp.jssid }}', '{{ comp.hostname|escapejs }}')" 
@@ -190,8 +187,8 @@
                                         </div>
                                         {% endif %}
 
-                                        <!-- Secure Custom Protocol Action Buttons (Wrapped in their own group to stack cleanly) -->
-                                        <div class="d-flex flex-wrap justify-content-center align-items-center gap-2">
+                                        <!-- The tightly packed gap-1 inner container to prevent wrapping -->
+                                        <div class="d-flex flex-nowrap justify-content-center align-items-center gap-1">
                                             <button onclick="initiateConnection('{{ comp.id }}', 'Screen Share', 'auraras://connect?type=vnc&port={{ comp.vnc_port }}&host={{ comp.hostname }}')" 
                                                     class="btn btn-sm btn-purdue-gold shadow-sm text-nowrap"
                                                     aria-label="Start Screen Share session with {{ comp.hostname }}">
@@ -204,7 +201,6 @@
                                                 Terminal
                                             </button>
                                         </div>
-                                        
                                     </div>
                                 </td>
                             </tr>
@@ -216,7 +212,6 @@
         </div>
     </main>
 
-    <!-- RESTORED: Dynamic LAPS Modal HTML -->
     <div class="modal fade" id="lapsModal" tabindex="-1" aria-labelledby="lapsModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content shadow-lg border-0">
@@ -226,8 +221,7 @@
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body p-4" id="lapsModalBody">
-                </div>
+                <div class="modal-body p-4" id="lapsModalBody"></div>
                 <div class="modal-footer border-top-0">
                     <div class="text-start w-100 text-muted small" style="font-size: 0.75rem;">
                         <i class="bi bi-info-circle me-1"></i> Viewing a password will trigger an automatic rotation in Jamf.
@@ -248,56 +242,34 @@
     </footer>
 
 {% else %}
-
-    <!-- RESTORED: Unauthenticated User State (Full Page Steel Background) -->
-    <style>
-        body { background-color: var(--purdue-steel) !important; }
-    </style>
-    
+    <style> body { background-color: var(--purdue-steel) !important; } </style>
     <main class="d-flex flex-grow-1 flex-column align-items-center justify-content-center w-100">
         <div class="card shadow-lg border-0 p-5 text-center" style="max-width: 420px; width: 90%; border-radius: 1.25rem;">
-            <div class="mb-0">
-                <img src="/static/aura_icon.png" alt="AuraRAS Logo" width="84" height="84" class="rounded-4 shadow-sm mb-3">
-            </div>
+            <div class="mb-0"><img src="/static/aura_icon.png" alt="AuraRAS Logo" width="84" height="84" class="rounded-4 shadow-sm mb-3"></div>
             <h1 class="h3 fw-bold mt-0 mb-0">AuraRAS</h1>
             <p class="text-muted mb-5">Secure Remote Access</p>
-
             {% if user.is_authenticated %}
                 <i class="bi bi-x-octagon-fill text-danger mb-2" style="font-size: 3rem;"></i>
                 <h2 class="h5 fw-bold">Access Denied</h2>
                 <p class="text-muted mb-4">Your Microsoft Entra ID account is not authorized to view this portal.</p>
                 <form action="{% url 'oidc_logout' %}" method="post">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-danger w-100 fw-bold">
-                        <i class="bi bi-box-arrow-right me-2"></i> Log Out
-                    </button>
+                    <button type="submit" class="btn btn-outline-danger w-100 fw-bold"><i class="bi bi-box-arrow-right me-2"></i> Log Out</button>
                 </form>
             {% else %}
-                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg w-100 fw-bold shadow-sm">
-                    <i class="bi bi-microsoft me-2"></i> Sign In with Microsoft
-                </a>
+                <a href="{% url 'oidc_authentication_init' %}" class="btn btn-purdue-gold btn-lg w-100 fw-bold shadow-sm"><i class="bi bi-microsoft me-2"></i> Sign In with Microsoft</a>
             {% endif %}
         </div>
-        <div class="text-light mt-4">
-            <span class="fw-lighter small d-flex align-items-center">
-                <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="28" height="28" class="me-2">
-                Purdue Apple Enterprise
-            </span>
-        </div>
     </main>
-
 {% endif %}
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- Conditionally load heavy JS only for authenticated users -->
 {% if user.is_authenticated and user_role in 'Server Administrator,Desktop Administrator,Customer' %}
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-
 <script>
-    let lapsModalInstance;
+    let lapsModalInstance = new bootstrap.Modal(document.getElementById('lapsModal'));
     
     // Send background updates to the server when preferences change
     function savePreference(key, value) {
@@ -317,14 +289,10 @@
     }
 
     $(document).ready(function() {
-        // Init Modals and Tooltips
-        const modalEl = document.getElementById('lapsModal');
-        if (modalEl) {
-            lapsModalInstance = new bootstrap.Modal(modalEl);
-        }
+        // Init Tooltips
         $('[data-bs-toggle="tooltip"]').tooltip();
 
-        // --- DataTables Initialization ---
+        // Init DataTables
         const userRowsPref = {{ request.user.profile.rows_per_page|default:25 }};
 
         var table = $('#endpointsTable').DataTable({
@@ -342,9 +310,9 @@
                 "infoFiltered": "(filtered from _MAX_)",
                 "emptyTable": "No endpoints have registered with the server yet."
             },
-            "order": [[6, "desc"]], // Automatically sort by the 'Last Check-in' column (index 6) descending
+            "order": [[6, "desc"]], 
             "columnDefs": [
-                { "orderable": false, "targets": [0, 7] }, // Disable sorting on Status Dot and Actions
+                { "orderable": false, "targets": [0, 7] }, 
                 { "searchable": false, "targets": [0, 2, 6, 7] }
             ]
         });
@@ -353,12 +321,11 @@
             $('[data-bs-toggle="tooltip"]').tooltip();
         });
 
-        // Listen for DataTables page length changes to save the preference
         table.on('length.dt', function (e, settings, len) {
             savePreference('rows_per_page', len);
         });
 
-        // --- Background Dashboard Auto-Refresh ---
+        // Background Auto-Refresh
         const refreshMinutes = parseInt("{{ request.user.profile.auto_refresh_interval|default:15 }}", 10) || 15;
         if (refreshMinutes > 0) {
             setTimeout(function() {
@@ -367,7 +334,6 @@
         }
     });
 
-    // --- RESTORED 0.1.7 LAPS Logic & Dynamic Table UI ---
     function copyToClipboard(text, btnElement) {
         const showSuccess = () => {
             if (btnElement) {
@@ -407,7 +373,7 @@
         }
     }
 
-    function openLapsModal(jssid, hostname) {
+    function openLapsModal(compId, jssid, hostname) {
         $('#lapsModalBody').html(`
             <div class="text-center py-4">
                 <div class="spinner-border text-secondary mb-2" role="status"></div>
