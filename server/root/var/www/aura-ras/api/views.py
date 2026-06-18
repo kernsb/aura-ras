@@ -258,11 +258,11 @@ def dashboard(request):
                 seconds_since = abs(seconds_since)
             
             if seconds_since > 86400:
-                comp.status_color = 'danger'
+                comp.status_color = 'red'
                 comp.status_text = 'Offline (Unreachable for > 24 hours)'
                 
             elif seconds_since > grace_period_seconds:
-                comp.status_color = 'warning'
+                comp.status_color = 'yellow'
                 comp.status_text = 'Offline / Sleeping (Missed recent check-in)'
                 
             else:
@@ -300,13 +300,13 @@ def dashboard(request):
                                         pass
                             
                     if is_active:
-                        comp.status_color = 'primary'
+                        comp.status_color = 'blue'
                         comp.status_text = 'Active Session Established'
                     else:
-                        comp.status_color = 'success'
+                        comp.status_color = 'green'
                         comp.status_text = 'Online & Tunnel Ready'
                 else:
-                    comp.status_color = 'warning'
+                    comp.status_color = 'yellow'
                     comp.status_text = 'Tunnel Disconnected (Network Interruption)'
 
     else:
@@ -476,6 +476,17 @@ def laps_password(request, jssid, account_type):
         api = JamfAPI(settings_obj.jamf_url, settings_obj.jamf_client_id, settings_obj.jamf_client_secret)
         logger.info(f"User {request.user.username} requested LAPS password for JSSID {jssid} (Account Type: {account_type})")
         
+        # --- NEW: Log LAPS request to aura_events.log ---
+        try:
+            comp = Computer.objects.get(jssid=jssid)
+            target_str = f"{comp.hostname} ({comp.serial_number or 'Unknown'})"
+        except Computer.DoesNotExist:
+            target_str = f"JSSID:{jssid} (Unknown)"
+            
+        display_type = "Jamf Admin" if account_type == 'jamf' else "PreStage Admin"
+        aura_logger.info(f"LAPS REQUESTED | Admin: {request.user.username} | Type: {display_type} | Target: {target_str}")
+        # ------------------------------------------------
+
         if account_type == 'jamf':
             mgmt_id = api.get_management_id(jssid)
             accounts = api.get_laps_accounts(mgmt_id)
