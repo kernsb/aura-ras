@@ -54,6 +54,13 @@ class Command(BaseCommand):
             
             # If the socket is dead, close the record and log the disconnect
             if not is_active:
+                
+                # --- NEW: GRACE PERIOD ---
+                # Give the admin 3 minutes to look up their LAPS password and type it in
+                # before we assume they abandoned the connection attempt.
+                if (now - session.start_time) < timedelta(minutes=3):
+                    continue
+                    
                 session.is_active = False
                 session.end_time = now
                 session.save()
