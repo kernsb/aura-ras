@@ -47,7 +47,7 @@
 <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 
 <nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top" aria-label="Main Navigation">
-    <div class="container">
+    <div class="container-fluid px-4 px-xl-5">
         <a class="navbar-brand d-flex align-items-center" href="{% url 'dashboard' %}">
             <img src="/static/aura_icon.png" alt="AuraRAS Logo" width="42" height="42" class="d-inline-block align-text-top me-2 rounded">
             AuraRAS<div class="fw-normal fs-6 text-white-50">&nbsp;&nbsp;&nbsp;Secure Remote Access</div>
@@ -93,7 +93,7 @@
     </div>
 </nav>
 
-<main class="container" style="margin-top: 100px; margin-bottom: 80px;">
+<main class="container-fluid px-4 px-xl-5" style="margin-top: 100px; margin-bottom: 80px;">
     {% if user.is_authenticated %}
         <div class="row mb-4">
             <div class="col">
@@ -237,7 +237,7 @@
 </div>
 
 <footer class="footer py-3 fixed-bottom">
-    <div class="container d-flex justify-content-between align-items-center text-light">
+    <div class="container-fluid px-4 px-xl-5 d-flex justify-content-between align-items-center text-light">
         <span class="fw-lighter small d-flex align-items-center">
             <img src="/static/purdue_icon.svg" alt="Purdue P Logo" width="28" height="28" class="me-2">
             Purdue Apple Enterprise
