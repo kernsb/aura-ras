@@ -18,6 +18,36 @@
     <style>
         [data-bs-theme="light"] .jamf-icon-dark { display: none !important; }
         [data-bs-theme="dark"] .jamf-icon-light { display: none !important; }
+
+        /* Stoplight Status Indicators (Restored from 0.1.7) */
+        .status-dot {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 4px rgba(0,0,0,0.3);
+        }
+        
+        /* Map both the old raw colors and the new Bootstrap contextual classes */
+        .status-red, .status-danger { background-color: #dc3545; }
+        .status-yellow, .status-warning { background-color: #ffc107; }
+        
+        .status-green, .status-success { 
+            background-color: #198754; 
+            box-shadow: 0 0 8px rgba(25, 135, 84, 0.8); 
+        }
+        
+        .status-blue, .status-primary { 
+            background-color: #0d6efd; 
+            box-shadow: 0 0 10px rgba(13, 110, 253, 0.9);
+            animation: pulse-blue 2s infinite; 
+        }
+        
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(13, 110, 253, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0); }
+        }
     </style>
 
     <script>
@@ -44,7 +74,7 @@
 <body class="d-flex flex-column min-vh-100">
 
 <!-- Hidden CSRF Token for our AJAX POST requests -->
-<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+<input type="hidden" name="csrfmiddlewaretoken" id="csrf_token_main" value="{{ csrf_token }}">
 
 <nav class="navbar navbar-expand-lg navbar-dark shadow-sm fixed-top" aria-label="Main Navigation">
     <div class="container-fluid px-4 px-xl-5">
@@ -123,7 +153,7 @@
                             <tr>
                                 <td class="ps-4 fw-semibold">
                                     <div class="d-flex align-items-center">
-                                        <span class="p-1 rounded-circle me-2 shadow-sm" style="background-color: {{ comp.status_color }}; width: 12px; height: 12px;" title="{{ comp.status_text }}"></span>
+                                        <span class="status-dot status-{{ comp.status_color }} me-2" title="{{ comp.status_text }}" data-bs-toggle="tooltip"></span>
                                         {{ comp.hostname }}
                                     </div>
                                 </td>
@@ -371,7 +401,7 @@
     }
 
     function initiateConnection(computerId, sessionType, customUrlScheme) {
-        const csrfToken = document.querySelector('input[name=csrfmiddlewaretoken]')?.value; 
+        const csrfToken = document.getElementById('csrf_token_main').value; 
         const formData = new FormData();
         formData.append('computer_id', computerId);
         formData.append('session_type', sessionType);
